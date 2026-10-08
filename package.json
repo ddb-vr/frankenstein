@@ -1,0 +1,22 @@
+{
+  "name": "frankenstein",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "ultracite check",
+    "fix": "ultracite fix",
+    "sandbox:build": "docker build -t frankenstein-sandbox sandbox",
+    "test": "node --test \"scripts/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@types/node": "^24.19.1",
+    "typescript": "^7.0.2",
+    "ultracite": "^7.12.4"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
