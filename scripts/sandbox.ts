@@ -11,6 +11,7 @@ export const SKILL_MOUNT = "/skill";
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const DOCKER_FAILURE_EXIT_CODES: readonly number[] = [125, 126, 127];
 
 export interface SandboxOptions {
   /** Arguments to the image ENTRYPOINT (`node`). */
@@ -107,9 +108,18 @@ export const runInSandbox = (
       if (code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
         killContainer(containerName, () => undefined);
       }
+      const exitCode = child.exitCode ?? -1;
+      // 125: docker itself failed (daemon down, image missing); 126/127: command
+      // could not be invoked. None of these are the skill's own output.
+      if (!timedOut && DOCKER_FAILURE_EXIT_CODES.includes(exitCode)) {
+        reject(
+          new Error(`docker run failed (exit ${exitCode}): ${stderr.trim()}`)
+        );
+        return;
+      }
       resolve({
         durationMs: Math.round(performance.now() - startedAt),
-        exitCode: child.exitCode ?? -1,
+        exitCode,
         stderr,
         stdout,
         timedOut,
