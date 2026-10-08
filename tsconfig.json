@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["scripts/**/*.ts", ".claude/**/*.ts"]
+  "include": ["scripts/**/*.ts", ".claude/**/*.ts", "fixtures/**/*.ts"]
 }
