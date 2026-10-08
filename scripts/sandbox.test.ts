@@ -48,6 +48,14 @@ test("only FRANKENSTEIN_MODE and explicit env vars are passed, always as KEY=val
   assert.ok(!args.some((arg) => arg.startsWith("--env")));
 });
 
+test("real runs (testMode false) drop FRANKENSTEIN_MODE but keep explicit env", () => {
+  const args = buildDockerArgs(
+    { ...base, env: { API_URL: "http://x" }, testMode: false },
+    "frk-t"
+  );
+  assert.deepEqual(flagValues(args, "-e"), ["API_URL=http://x"]);
+});
+
 test("rejects env names that could forward host values or inject flags", () => {
   for (const key of ["A B", "X=Y", "", "-e"]) {
     assert.throws(() =>
