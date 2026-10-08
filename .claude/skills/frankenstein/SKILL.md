@@ -11,11 +11,7 @@ Lifecycle for building a new skill:
 2. **PRD + questions** – delegate to the `prd` agent; relay its questions to the user. TODO
 3. **Source of truth confirmed by user** – user confirms summary and `examples.json`; then lock it with `node scripts/lock.ts <skill>` (hooks block any later edit).
 4. **PRD review** – delegate to the `prd-reviewer` agent. TODO
-5. **Open issue** – `node scripts/tracker.ts` opens the GitHub issue as the bot. TODO
-6. **Build loop** – invoke `skill-builder` repeatedly until `node scripts/run-examples.ts work/<skill>` passes. Hooks deny the call past `MAX_BUILDER_ITERATIONS` or once `BUDGET_USD_PER_RUN` is spent: then mark the issue blocked (`node scripts/tracker.ts blocked`).
-7. **Final review** – delegate to the `skill-reviewer` agent; it writes `work/<skill>/review.json`. TODO
-8. **Install** – `node scripts/registry.ts install <skill> --issue <n> [--network]` checks lock, approval and a fresh test run, then copies into `.claude/skills/<name>/`, commits and tags `skill/<name>@vN` as the bot.
-9. **Close issue with cost** – `node scripts/tracker.ts done --issue <n> --summary <text> --version <vN>` attaches this session's real token usage and cost.
+5. **Build, review, install** – see [Build, review, install](#build-review-install).
 
 ## Intake
 
@@ -35,3 +31,17 @@ This covers lifecycle steps 1–4: gap detection, then a user-confirmed and revi
    - `approve`: intake is done. Continue with the lifecycle at **Open issue**.
    - `reject`: go back to step 4 and pass the `reasons`. Show the user what changed and get a new *Yes* (step 5, which locks again). Then review again.
    - After 3 rejects, stop and show the user the reasons.
+
+## Build, review, install
+
+Starts once the intake hands over a locked, PRD-reviewed `work/<skill>/`. A hook denial is final: never retry the denied action, follow its reason.
+
+1. **Open issue** – `node scripts/tracker.ts open --skill <skill> --summary "<goal + why>"`. It writes `work/<skill>/issue.json` (`{ "issue", "url" }`); take `<n>` from there in later steps.
+2. **Build loop** – invoke the `skill-builder` agent with only `<skill>` as the prompt. It returns one line `{ "status": "pass" | "fail" | "impossible", "summary" }`. On `fail`, invoke it again: each call has a fresh context, state lives in `work/<skill>/progress.md`. The budget hook caps iterations and spend.
+3. **Final review** – on `pass`, invoke the `skill-reviewer` agent with only `<skill>`. The capture-review hook records its `verdict` block in `work/<skill>/review.json`; read that file for the verdict.
+4. **Reject** – put the reviewer's reasons on top of `work/<skill>/progress.md` (heading `Review rejected:`), invoke `skill-builder` once more and, if it returns `pass`, `skill-reviewer` once more. A second reject → blocked.
+5. **Install** – `node scripts/registry.ts install <skill>`, plus `--network` when the PRD's Network section says network is needed. Bot commit + tag `skill/<skill>@vN`.
+6. **Done** – `node scripts/tracker.ts done --issue <n> --summary "<what was built>" --version <vN>`. Usage and cost come from the current run automatically.
+7. **Finish the user's task** – use the new skill via `node scripts/run-skill.ts <skill> '<json>'`, answer the user's original request and report the run cost (`totalUsd` from step 6).
+
+**Blocked** – the budget or iteration hook denies, the second review rejects, the builder returns `impossible`, or install returns `"installed": false`: run `node scripts/tracker.ts blocked --issue <n> --reason "<short reason>"`, tell the user what failed and stop.

@@ -1,6 +1,7 @@
 // PreToolUse hook (matcher `Write|Edit|MultiEdit|NotebookEdit`): blocks file
-// tool writes to locked acceptance examples, written review verdicts, lock
-// files, installed skills, Claude settings, repo scripts and the registry.
+// tool writes to locked acceptance examples, review verdicts (written only by
+// `capture-review.ts`), lock files, installed skills, Claude settings, repo
+// scripts and the registry.
 
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -62,8 +63,8 @@ export const checkFileWrite = (
   if (kind === "examples" && context.exists(`work/.locks/${skill}.json`)) {
     return `Blocked: work/${skill}/examples.json is locked (the user confirmed it as the source of truth). Build against it unchanged; report a wrong example to the main agent instead.`;
   }
-  if (kind === "review" && context.exists(relative)) {
-    return `Blocked: work/${skill}/review.json is already written; a review verdict is final.`;
+  if (kind === "review") {
+    return `Blocked: work/${skill}/review.json is written only by the capture-review hook from the skill-reviewer's final \`verdict\` block. Invoke the skill-reviewer instead.`;
   }
 };
 
