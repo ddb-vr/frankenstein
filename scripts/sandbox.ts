@@ -110,8 +110,13 @@ export const runInSandbox = (
       }
       const exitCode = child.exitCode ?? -1;
       // 125: docker itself failed (daemon down, image missing); 126/127: command
-      // could not be invoked. None of these are the skill's own output.
-      if (!timedOut && DOCKER_FAILURE_EXIT_CODES.includes(exitCode)) {
+      // could not be invoked. Docker CLI errors never write stdout, so a skill
+      // exiting with these codes but printing output is still its own result.
+      if (
+        !timedOut &&
+        stdout === "" &&
+        DOCKER_FAILURE_EXIT_CODES.includes(exitCode)
+      ) {
         reject(
           new Error(`docker run failed (exit ${exitCode}): ${stderr.trim()}`)
         );
