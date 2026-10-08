@@ -4,3 +4,4 @@ logs/*
 !logs/.gitkeep
 work/*
 !work/.gitkeep
+*.pem
