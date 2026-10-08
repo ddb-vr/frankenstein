@@ -3,15 +3,19 @@
 //
 //   node scripts/tracker.ts open    --skill <name> --summary <text>
 //   node scripts/tracker.ts blocked --issue <n> --reason <text>
-//   node scripts/tracker.ts done    --issue <n> --summary <text> --usage <file> [--version <vN>]
+//   node scripts/tracker.ts done    --issue <n> --summary <text> [--usage <file>] [--version <vN>]
+//
+// `done` without `--usage` reports the current Claude Code session's usage
+// (`CLAUDE_CODE_SESSION_ID`), as tracked by `scripts/hooks/budget.ts`.
 //
 // Every command accepts `--dry-run` (prints the planned `gh` calls instead of
 // running them; needs no `.env` and no network). Output is one JSON line.
 
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { runAsBot } from "./github-app-token.ts";
+import { getRunUsage } from "./hooks/budget.ts";
+import { loadDotEnv } from "./lib/env.ts";
 import {
   type CostReport,
   computeCost,
@@ -25,7 +29,6 @@ const DRY_RUN_ISSUE_NUMBER = 0;
 const USD_DECIMALS = 4;
 const ISSUE_URL_NUMBER = /\/issues\/(\d+)\s*$/;
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
-const DOT_ENV_PATH = join(import.meta.dirname, "..", ".env");
 
 const LABELS = [
   {
@@ -292,16 +295,14 @@ const requireIssue = (value: string | undefined): number => {
   return Number(value);
 };
 
-const loadDotEnv = (): void => {
-  try {
-    process.loadEnvFile(DOT_ENV_PATH);
-  } catch (error) {
-    const missing =
-      error instanceof Error && "code" in error && error.code === "ENOENT";
-    if (!missing) {
-      throw error;
-    }
+const sessionUsage = (): UsageEntry[] => {
+  const sessionId = process.env.CLAUDE_CODE_SESSION_ID;
+  if (!sessionId) {
+    throw new Error(
+      "Missing --usage (outside Claude Code there is no CLAUDE_CODE_SESSION_ID)"
+    );
   }
+  return getRunUsage(sessionId);
 };
 
 const resolveRepo = (dryRun: boolean): string => {
@@ -360,8 +361,10 @@ export const run = async (argv: string[]): Promise<unknown> => {
     case "done": {
       const issue = requireIssue(values.issue);
       const summary = requireText(values.summary, "summary");
-      const usagePath = requireText(values.usage, "usage");
-      const cost = computeCost(parseUsage(await readFile(usagePath, "utf8")));
+      const usage = values.usage
+        ? parseUsage(await readFile(values.usage, "utf8"))
+        : sessionUsage();
+      const cost = computeCost(usage);
       result = await completeIssue(ctx, issue, summary, cost, values.version);
       break;
     }

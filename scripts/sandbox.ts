@@ -16,12 +16,17 @@ const DOCKER_FAILURE_EXIT_CODES: readonly number[] = [125, 126, 127];
 export interface SandboxOptions {
   /** Arguments to the image ENTRYPOINT (`node`). */
   command: string[];
-  /** Extra env vars; the only ones besides `FRANKENSTEIN_MODE=test`. */
+  /** Extra env vars; the only ones besides `FRANKENSTEIN_MODE` (`testMode`). */
   env?: Record<string, string>;
   /** Allow network access. Default `false` (`--network none`). */
   network?: boolean;
   skillDir: string;
   stdin?: string;
+  /**
+   * Set `FRANKENSTEIN_MODE=test` (no network, recorded fixtures). Default
+   * `true`; `false` only for real runs of installed skills.
+   */
+  testMode?: boolean;
   timeoutMs?: number;
 }
 
@@ -40,7 +45,8 @@ export const buildDockerArgs = (
   options: SandboxOptions,
   containerName: string = newContainerName()
 ): string[] => {
-  const envArgs = ["-e", "FRANKENSTEIN_MODE=test"];
+  const envArgs =
+    options.testMode === false ? [] : ["-e", "FRANKENSTEIN_MODE=test"];
   for (const [key, value] of Object.entries(options.env ?? {})) {
     // A bare `-e KEY` would make Docker copy the host value, so names are strict
     // and every var is always passed as KEY=value.
