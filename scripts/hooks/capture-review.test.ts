@@ -28,9 +28,28 @@ afterEach(() => {
 const answer = (verdict: unknown): string =>
   `Checked everything.\n\n\`\`\`verdict\n${JSON.stringify(verdict, null, 2)}\n\`\`\`\n`;
 
-const stop = (message: string, stopHookActive = false): CaptureOutcome =>
+const stop = (message: string, retryAllowed = true): CaptureOutcome =>
   captureReview(
-    { agentType: "skill-reviewer", message, stopHookActive },
+    {
+      agentId: "a1",
+      agentType: "skill-reviewer",
+      message,
+      retryAllowed,
+      source: "stop",
+    },
+    root,
+    NOW
+  );
+
+const handback = (message: string, agentId = "a2"): CaptureOutcome =>
+  captureReview(
+    {
+      agentId,
+      agentType: "skill-reviewer",
+      message,
+      retryAllowed: true,
+      source: "handback",
+    },
     root,
     NOW
   );
@@ -105,10 +124,33 @@ test("a malformed answer gets one retry, then nothing is recorded", () => {
   const unknown = stop(answer({ ...approve, skill: "other-skill" }));
   assert.match(unknown.kind === "retry" ? unknown.reason : "", UNKNOWN_SKILL);
 
-  const retried = stop("Still no block.", true);
+  const retried = stop("Still no block.", false);
   assert.equal(retried.kind, "skipped");
   assert.match(retried.kind === "skipped" ? retried.message : "", NO_VERDICT);
   assert.throws(review);
+});
+
+test("a hand-back report is recorded and that reviewer's closing stop is ignored", () => {
+  assert.equal(handback("No block here.").kind, "retry");
+  assert.equal(handback(answer(reject)).kind, "written");
+  assert.partialDeepStrictEqual(review(), { round: 1, verdict: "reject" });
+  // Same agent: its closing text is not the report.
+  assert.deepEqual(
+    captureReview(
+      {
+        agentId: "a2",
+        agentType: "skill-reviewer",
+        message: "Handed back.",
+        retryAllowed: true,
+        source: "stop",
+      },
+      root,
+      NOW
+    ),
+    { kind: "ignored" }
+  );
+  // A later reviewer without hand-back still reports at stop.
+  assert.equal(stop("Handed back.").kind, "retry");
 });
 
 test("hook process blocks a malformed stop and ignores other agents", async () => {
@@ -136,5 +178,14 @@ test("hook process blocks a malformed stop and ignores other agents", async () =
 
   const other = await run({ agent_type: "prd", last_assistant_message: "x" });
   assert.equal(other.exitCode, 0);
-  assert.equal(JSON.parse(other.stdout).decision, undefined);
+  assert.equal(other.stdout, "");
+
+  const denied = await run({
+    agent_type: "skill-reviewer",
+    hook_event_name: "PreToolUse",
+    tool_input: { message: "Approved." },
+    tool_name: "SubagentHandback",
+  });
+  assert.equal(denied.exitCode, 0);
+  assert.match(denied.reason ?? "", NOT_RECORDED);
 });

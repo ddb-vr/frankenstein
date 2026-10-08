@@ -47,6 +47,16 @@
             "args": ["${CLAUDE_PROJECT_DIR}/scripts/hooks/guard-bash.ts"]
           }
         ]
+      },
+      {
+        "matcher": "SubagentHandback",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PROJECT_DIR}/scripts/hooks/capture-review.ts"]
+          }
+        ]
       }
     ],
     "SubagentStop": [

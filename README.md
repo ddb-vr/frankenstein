@@ -48,7 +48,7 @@ Claude Code hooks (`.claude/settings.json`, `scripts/hooks/`) and permission den
 | --- | --- |
 | `examples.json` is locked once the user confirms the source of truth | `node scripts/lock.ts <skill>` writes `work/.locks/<skill>.json` (sha256 + timestamp); `guard-files.ts` denies edits while it exists |
 | Nothing lands in `.claude/skills/` except through the install script | `Edit(/.claude/skills/**)` deny rule; `guard-files.ts` and `guard-bash.ts` deny writes and shell access |
-| Install only with passing tests and an approve verdict | `node scripts/registry.ts install` checks lock hash, `review.json` and a fresh `run-examples`; `review.json` is written only by `capture-review.ts` (SubagentStop) from the `skill-reviewer`'s final `verdict` block, max 2 review rounds, an approve is final |
+| Install only with passing tests and an approve verdict | `node scripts/registry.ts install` checks lock hash, `review.json` and a fresh `run-examples`; `review.json` is written only by `capture-review.ts` from the `skill-reviewer`'s final `verdict` block (SubagentStop, or the `SubagentHandback` report in auto mode), max 2 review rounds, an approve is final |
 | Generated code never executes on the host | `guard-bash.ts` denies runtimes (`node`, `npx`, `tsx`, `deno`, `bun`, `python`, …) on `work/`, `.claude/skills/`, `fixtures/skills/` and docker/`--network` outside the sandbox scripts |
 | Builder iterations and USD spend per run are capped | `budget.ts` counts `skill-builder` calls and sums transcript usage (`MAX_BUILDER_ITERATIONS`, `BUDGET_USD_PER_RUN` in `.env`) |
 

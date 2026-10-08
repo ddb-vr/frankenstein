@@ -25,7 +25,9 @@
 //   `agent_type`, `last_assistant_message` (the subagent's final text) and
 //   `stop_hook_active`. Stdout JSON `{ decision: "block", reason }` keeps the
 //   subagent running with `reason` as its next instruction; `systemMessage`
-//   is shown to the user.
+//   is shown to the user. In auto mode (v2.1.271+) a subagent delivers its
+//   report via the `SubagentHandback` tool (`tool_input.message`) instead,
+//   and `last_assistant_message` is only its closing text.
 
 import { readFileSync, writeSync } from "node:fs";
 import path from "node:path";
