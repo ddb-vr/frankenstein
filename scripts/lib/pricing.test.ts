@@ -69,6 +69,41 @@ test("computeCost of empty usage is zero", () => {
 });
 
 test("priceFor accepts snapshot suffixes and rejects unknown models", () => {
-  assert.equal(priceFor("claude-sonnet-4-6-20260101").input, 3);
+  assert.equal(priceFor("claude-sonnet-5-5-20260101").input, 2);
+  assert.throws(() => priceFor("claude-sonnet-4-6"), UNKNOWN_MODEL_ERROR);
   assert.throws(() => priceFor("gpt-4"), UNKNOWN_MODEL_ERROR);
+});
+
+test("computeCost prices Haiku 5.5 per prompt tier, grouped in one row", () => {
+  const tokens = {
+    cacheRead: 1_000_000,
+    cacheWrite: 1_000_000,
+    input: 1_000_000,
+    output: 1_000_000,
+  };
+  const report = computeCost([
+    { ...tokens, model: "claude-haiku-5-5" },
+    { ...tokens, longPrompt: true, model: "claude-haiku-5-5" },
+  ]);
+
+  // <=100k prompt: 0.1 + 0.125 + 0.01 + 0.5 = 0.735
+  // >100k prompt:  0.5 + 0.625 + 0.05 + 2.5 = 3.675
+  assert.deepEqual(report.perModel, [
+    {
+      cacheRead: 2_000_000,
+      cacheWrite: 2_000_000,
+      input: 2_000_000,
+      model: "claude-haiku-5-5",
+      output: 2_000_000,
+      usd: 4.41,
+    },
+  ]);
+  assert.equal(report.totalUsd, 4.41);
+});
+
+test("longPrompt does not change flat-priced models", () => {
+  assert.deepEqual(
+    priceFor("claude-opus-5-5", true),
+    priceFor("claude-opus-5-5")
+  );
 });

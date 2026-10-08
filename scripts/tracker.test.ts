@@ -122,6 +122,12 @@ test("parseUsage rejects malformed usage", () => {
     () => parseUsage(JSON.stringify([{ input: -1, model: "x" }])),
     USAGE_SHAPE_ERROR
   );
+  const longPrompt = [{ ...SAMPLE_USAGE[0], longPrompt: true }];
+  assert.deepEqual(parseUsage(JSON.stringify(longPrompt)), longPrompt);
+  assert.throws(
+    () => parseUsage(JSON.stringify([{ ...SAMPLE_USAGE[0], longPrompt: 1 }])),
+    USAGE_SHAPE_ERROR
+  );
 });
 
 test("open --dry-run plans labels and issue creation", async () => {

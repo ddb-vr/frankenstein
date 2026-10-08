@@ -257,6 +257,8 @@ const isUsageEntry = (value: unknown): value is UsageEntry => {
   const record = value as Record<string, unknown>;
   return (
     typeof record.model === "string" &&
+    (record.longPrompt === undefined ||
+      typeof record.longPrompt === "boolean") &&
     USAGE_KEYS.every(
       (key) =>
         typeof record[key] === "number" &&
@@ -270,7 +272,7 @@ export const parseUsage = (json: string): UsageEntry[] => {
   const parsed: unknown = JSON.parse(json);
   if (!(Array.isArray(parsed) && parsed.every(isUsageEntry))) {
     throw new Error(
-      "Usage file must be a JSON array of { model, input, cacheWrite, cacheRead, output }"
+      "Usage file must be a JSON array of { model, input, cacheWrite, cacheRead, output, longPrompt? }"
     );
   }
   return parsed;
