@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 import {
   failedTestNames,
+  findUnitTests,
   formatSummary,
+  lintReason,
   logTimestamp,
   MAX_REASON_LENGTH,
   truncateReason,
@@ -58,4 +63,32 @@ test("failedTestNames extracts failing test names from spec output", () => {
     "✖ counts words (3.4ms)",
   ].join("\n");
   assert.deepEqual(failedTestNames(output), ["counts words"]);
+});
+
+test("findUnitTests: no tests/ skips, an empty tests/ yields none, nested files count", (t) => {
+  const skillDir = mkdtempSync(path.join(tmpdir(), "run-examples-test-"));
+  t.after(() => rmSync(skillDir, { force: true, recursive: true }));
+  assert.equal(findUnitTests(skillDir), undefined);
+
+  const tests = path.join(skillDir, "tests");
+  mkdirSync(path.join(tests, "nested"), { recursive: true });
+  writeFileSync(path.join(tests, "helper.ts"), "");
+  assert.deepEqual(findUnitTests(skillDir), []);
+
+  writeFileSync(path.join(tests, "nested", "main.test.ts"), "");
+  assert.deepEqual(
+    findUnitTests(skillDir)?.map((file) => file.replaceAll("\\", "/")),
+    ["tests/nested/main.test.ts"]
+  );
+});
+
+test("lintReason names the fixer for the skill and lists every problem", () => {
+  const reason = lintReason("ico-validator", [
+    "× scripts/ico.ts:24:39: lint/style/noIncrementDecrement: Unexpected",
+    "a.ts(1,7): error TS2322: Type 'string' is not assignable",
+  ]);
+  assert.ok(reason.startsWith("2 lint problem(s)"));
+  assert.ok(reason.includes("`node scripts/fix-skill.ts ico-validator`"));
+  assert.ok(reason.includes("noIncrementDecrement"));
+  assert.ok(reason.includes("error TS2322"));
 });

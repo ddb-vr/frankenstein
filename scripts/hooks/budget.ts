@@ -1,6 +1,8 @@
 // PreToolUse hook (matcher `*`, runs on every tool call so it stays sync and
 // incremental): caps skill-builder invocations (`MAX_BUILDER_ITERATIONS`) and
-// USD spend (`BUDGET_USD_PER_RUN`) per Claude Code session.
+// USD spend (`BUDGET_USD_PER_RUN`) per Claude Code session. Over budget only
+// a plain `node scripts/tracker.ts …` and a Read of `work/<skill>/issue.json`
+// (the issue number for `tracker.ts blocked`) pass.
 //
 // State: `work/.run/<session_id>.json` with the builder invocation count, the
 // byte offset read so far per transcript file and the usage per model. Each
@@ -24,7 +26,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { loadDotEnv } from "../lib/env.ts";
-import { isPlainObject } from "../lib/examples.ts";
+import { isPlainObject, SKILL_NAME } from "../lib/examples.ts";
 import {
   computeCost,
   LONG_PROMPT_TOKENS,
@@ -363,6 +365,27 @@ const isTrackerCall = (input: HookInput): boolean => {
   );
 };
 
+/**
+ * Read of `work/<skill>/issue.json`, also allowed over budget: the blocked
+ * path needs the issue number `tracker.ts open` stored there.
+ */
+const isIssueRecordRead = (input: HookInput, root: string): boolean => {
+  const filePath = input.tool_input.file_path;
+  if (input.tool_name !== "Read" || typeof filePath !== "string") {
+    return false;
+  }
+  const [work, skill, file, ...rest] = path
+    .relative(root, path.resolve(root, filePath))
+    .split(path.sep);
+  return (
+    work === "work" &&
+    skill !== undefined &&
+    SKILL_NAME.test(skill) &&
+    file === "issue.json" &&
+    rest.length === 0
+  );
+};
+
 export const checkBudget = (
   input: HookInput,
   root: string,
@@ -378,8 +401,12 @@ export const checkBudget = (
     const isBuilderCall =
       SUBAGENT_TOOLS.has(input.tool_name) &&
       input.tool_input.subagent_type === BUILDER_AGENT;
-    if (spentUsd >= limits.budgetUsd && !isTrackerCall(input)) {
-      reason = `Blocked: run budget exhausted ($${spentUsd.toFixed(USD_DECIMALS)} of $${limits.budgetUsd} spent). Stop working; only \`node scripts/tracker.ts blocked --issue <n> --reason "budget exhausted"\` may run now.`;
+    if (
+      spentUsd >= limits.budgetUsd &&
+      !isTrackerCall(input) &&
+      !isIssueRecordRead(input, root)
+    ) {
+      reason = `Blocked: run budget exhausted ($${spentUsd.toFixed(USD_DECIMALS)} of $${limits.budgetUsd} spent). Stop working; only reading \`work/<skill>/issue.json\` for <n> and \`node scripts/tracker.ts blocked --issue <n> --reason "budget exhausted"\` may run now.`;
     } else if (
       isBuilderCall &&
       state.builderInvocations >= limits.maxBuilderIterations
@@ -393,6 +420,16 @@ export const checkBudget = (
   });
 };
 
+/** A session's saved state with transcripts synced in memory (not saved). */
+const syncedState = (file: string, sessionId: string): RunState => {
+  const state = loadState(file, sessionId, "");
+  if (state.transcriptPath === "") {
+    throw new Error(`no budget state for session ${sessionId}`);
+  }
+  syncUsage(state);
+  return state;
+};
+
 /** Usage of a session so far (synced from its transcripts), for cost reports. */
 export const getRunUsage = (
   sessionId: string,
@@ -400,15 +437,21 @@ export const getRunUsage = (
 ): UsageEntry[] => {
   const file = statePath(root, sessionId);
   return withLock(file, () => {
-    const state = loadState(file, sessionId, "");
-    if (state.transcriptPath === "") {
-      throw new Error(`no budget state for session ${sessionId}`);
-    }
-    syncUsage(state);
+    const state = syncedState(file, sessionId);
     saveState(file, state);
     return Object.values(state.usage);
   });
 };
+
+/**
+ * Same usage as `getRunUsage`, read-only: no lock and the synced state is
+ * never saved (dry-runs must write no files).
+ */
+export const peekRunUsage = (
+  sessionId: string,
+  root: string = REPO_ROOT
+): UsageEntry[] =>
+  Object.values(syncedState(statePath(root, sessionId), sessionId).usage);
 
 const positiveNumber = (name: string): number => {
   const value = Number(process.env[name]);

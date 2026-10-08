@@ -130,6 +130,34 @@ test("spend at the budget blocks every tool except a plain tracker call", () => 
   );
 });
 
+test("over budget, only Read of work/<skill>/issue.json is allowed besides tracker", () => {
+  appendFileSync(transcript, assistantLine("msg_1", OPUS, { output: 500_000 }));
+  const limits = { budgetUsd: 10, maxBuilderIterations: 5 };
+  const read = (filePath: string) =>
+    call("Read", { file_path: filePath }, limits);
+  assert.equal(
+    read(path.join(root, "work", "ico-validator", "issue.json")),
+    undefined
+  );
+  for (const denied of [
+    path.join(root, "work", "ico-validator", "review.json"),
+    path.join(root, "work", "ico-validator", "scripts", "issue.json"),
+    path.join(root, "work", "..", "issue.json"),
+    path.join(root, "work", "Bad_Name", "issue.json"),
+    path.join(tmpdir(), "work", "ico-validator", "issue.json"),
+  ]) {
+    assert.match(read(denied) ?? "", BUDGET_EXHAUSTED, denied);
+  }
+  assert.match(
+    call(
+      "Write",
+      { file_path: path.join(root, "work", "ico-validator", "issue.json") },
+      limits
+    ) ?? "",
+    BUDGET_EXHAUSTED
+  );
+});
+
 test("transcripts are read incrementally from the stored offset", () => {
   appendFileSync(transcript, assistantLine("msg_1", OPUS, { output: 100 }));
   // Claude Code repeats a message's usage on every content block line.

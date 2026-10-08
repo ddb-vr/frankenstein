@@ -24,7 +24,8 @@ Then run `node scripts/run-examples.ts work/<skill>` once.
   input/output shape, examples and network requirement are accurate.
 - Scope matches the PRD: nothing extra, nothing missing.
 
-A failing runner summary is always a reject.
+A failing runner summary is always a reject, including a failing `lint` stage (repo Biome rules or type errors; the
+builder fixes it with `node scripts/fix-skill.ts <skill>` plus hand edits).
 
 ## Verdict
 

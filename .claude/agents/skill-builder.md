@@ -30,15 +30,21 @@ gets unit tests in `tests/`.
 - Node 24 built-ins only, no npm packages. Relative imports use the `.ts` extension. Erasable TypeScript only (no
   `enum`, `namespace`, parameter properties).
 - Tests use `node:test` and `node:assert/strict`, import from `../scripts/*.ts`, and never use the network.
+- Code follows the repo's Biome/Ultracite rules (see `.claude/CLAUDE.md`), because the installed skill is linted by
+  `npm run check` and type-checked by `npm run typecheck`. Common misses: object keys sorted alphabetically, `interface`
+  instead of object `type`, `i += 1` instead of `i++`, regex literals at top level, Biome formatting (80 columns).
 
 Need real API data for tests: `node scripts/record-fixture.ts <skill> <name> <url>` saves it to
 `work/<skill>/fixtures/<name>.json`. Never fetch in code during tests.
 
 ## Verify
 
-Only via `node scripts/run-examples.ts work/<skill>` (unit tests + every example in the Docker sandbox; one JSON summary
-line). Hooks block running skill code on the host. Read `logs/<skill>/latest.log` only when the summary is not enough,
-and then only the relevant part. At most 3 runner calls per invocation.
+1. `node scripts/fix-skill.ts <skill>` – applies Biome's safe fixes and formatting to your files (never
+   `examples.json`) and prints `{ "pass": true }` or the `problems` left; fix those by hand and run it again.
+2. `node scripts/run-examples.ts work/<skill>` – the only way to run the skill: unit tests + every example in the Docker
+   sandbox, then the `lint` stage (Biome + tsc, the same check as step 1); one JSON summary line. Hooks block running
+   skill code on the host. Read `logs/<skill>/latest.log` only when the summary is not enough, and then only the
+   relevant part. At most 3 runner calls per invocation.
 
 ## SKILL.md
 

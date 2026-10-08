@@ -41,7 +41,9 @@
       "name": "rejects-letters",
       "input": { "ico": ["2708A440"] },
       "expected": {
-        "results": [{ "ico": "2708A440", "valid": false, "reason": "not_digits" }]
+        "results": [
+          { "ico": "2708A440", "valid": false, "reason": "not_digits" }
+        ]
       },
       "match": "exact"
     },
@@ -49,7 +51,9 @@
       "name": "rejects-too-long",
       "input": { "ico": ["123456789"] },
       "expected": {
-        "results": [{ "ico": "123456789", "valid": false, "reason": "too_long" }]
+        "results": [
+          { "ico": "123456789", "valid": false, "reason": "too_long" }
+        ]
       },
       "match": "exact"
     },

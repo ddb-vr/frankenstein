@@ -1,4 +1,8 @@
-export type IcoResult = { ico: string; valid: boolean; reason: string };
+export interface IcoResult {
+  ico: string;
+  reason: string;
+  valid: boolean;
+}
 
 const WHITESPACE = /\s+/g;
 const CZ_PREFIX = /^cz/i;
@@ -10,18 +14,18 @@ const MODULUS = 11;
 export function validateIco(raw: unknown): IcoResult {
   if (typeof raw !== "string") {
     const asText = raw === null || raw === undefined ? "" : String(raw);
-    return { ico: asText, valid: false, reason: "not_digits" };
+    return { ico: asText, reason: "not_digits", valid: false };
   }
   const cleaned = raw.replace(WHITESPACE, "").replace(CZ_PREFIX, "");
   if (cleaned === "" || !DIGITS.test(cleaned)) {
-    return { ico: cleaned, valid: false, reason: "not_digits" };
+    return { ico: cleaned, reason: "not_digits", valid: false };
   }
   if (cleaned.length > ICO_LENGTH) {
-    return { ico: cleaned, valid: false, reason: "too_long" };
+    return { ico: cleaned, reason: "too_long", valid: false };
   }
   const ico = cleaned.padStart(ICO_LENGTH, "0");
   let sum = 0;
-  for (let i = 0; i < WEIGHTS.length; i++) {
+  for (let i = 0; i < WEIGHTS.length; i += 1) {
     sum += Number(ico[i]) * WEIGHTS[i];
   }
   const r = sum % MODULUS;
@@ -32,7 +36,7 @@ export function validateIco(raw: unknown): IcoResult {
     check = 0;
   }
   const ok = check === Number(ico[ICO_LENGTH - 1]);
-  return { ico, valid: ok, reason: ok ? "ok" : "checksum" };
+  return { ico, reason: ok ? "ok" : "checksum", valid: ok };
 }
 
 export function validateInput(input: unknown): { results: IcoResult[] } {

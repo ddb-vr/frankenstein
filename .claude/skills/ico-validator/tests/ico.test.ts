@@ -7,7 +7,11 @@ import { validateIco, validateInput } from "../scripts/ico.ts";
 const MAIN = fileURLToPath(new URL("../scripts/main.ts", import.meta.url));
 
 test("valid checksum", () => {
-  assert.deepEqual(validateIco("27082440"), { ico: "27082440", valid: true, reason: "ok" });
+  assert.deepEqual(validateIco("27082440"), {
+    ico: "27082440",
+    reason: "ok",
+    valid: true,
+  });
 });
 
 test("bad checksum", () => {
@@ -33,12 +37,24 @@ test("special checksum branches", () => {
 });
 
 test("non-string items are not_digits", () => {
-  assert.deepEqual(validateIco(27_082_440), { ico: "27082440", valid: false, reason: "not_digits" });
-  assert.deepEqual(validateIco(null), { ico: "", valid: false, reason: "not_digits" });
+  assert.deepEqual(validateIco(27_082_440), {
+    ico: "27082440",
+    reason: "not_digits",
+    valid: false,
+  });
+  assert.deepEqual(validateIco(null), {
+    ico: "",
+    reason: "not_digits",
+    valid: false,
+  });
 });
 
 test("whitespace-only, bare CZ, lowercase prefix", () => {
-  assert.deepEqual(validateIco("   "), { ico: "", valid: false, reason: "not_digits" });
+  assert.deepEqual(validateIco("   "), {
+    ico: "",
+    reason: "not_digits",
+    valid: false,
+  });
   assert.equal(validateIco("CZ").reason, "not_digits");
   assert.equal(validateIco("cz27082440").reason, "ok");
 });
@@ -47,14 +63,23 @@ test("input errors with messages", () => {
   assert.throws(() => validateInput({}), { message: "Missing field: ico" });
   assert.throws(() => validateInput([]), { message: "Missing field: ico" });
   assert.throws(() => validateInput(5), { message: "Missing field: ico" });
-  assert.throws(() => validateInput({ ico: null }), { message: "ico must be an array of strings" });
-  assert.throws(() => validateInput({ ico: "x" }), { message: "ico must be an array of strings" });
-  assert.throws(() => validateInput({ ico: [] }), { message: "ico must not be empty" });
+  assert.throws(() => validateInput({ ico: null }), {
+    message: "ico must be an array of strings",
+  });
+  assert.throws(() => validateInput({ ico: "x" }), {
+    message: "ico must be an array of strings",
+  });
+  assert.throws(() => validateInput({ ico: [] }), {
+    message: "ico must not be empty",
+  });
   assert.equal(validateInput({ ico: ["19", "x"] }).results.length, 2);
 });
 
 test("main.ts invalid JSON exits 1", () => {
-  const r = spawnSync(process.execPath, [MAIN], { input: "not json", encoding: "utf8" });
+  const r = spawnSync(process.execPath, [MAIN], {
+    encoding: "utf8",
+    input: "not json",
+  });
   assert.equal(r.status, 1);
   const out = JSON.parse(r.stdout);
   assert.equal(typeof out.error, "string");
@@ -62,7 +87,12 @@ test("main.ts invalid JSON exits 1", () => {
 });
 
 test("main.ts valid input exits 0", () => {
-  const r = spawnSync(process.execPath, [MAIN], { input: '{"ico":["27082440"]}', encoding: "utf8" });
+  const r = spawnSync(process.execPath, [MAIN], {
+    encoding: "utf8",
+    input: '{"ico":["27082440"]}',
+  });
   assert.equal(r.status, 0);
-  assert.deepEqual(JSON.parse(r.stdout), { results: [{ ico: "27082440", valid: true, reason: "ok" }] });
+  assert.deepEqual(JSON.parse(r.stdout), {
+    results: [{ ico: "27082440", reason: "ok", valid: true }],
+  });
 });

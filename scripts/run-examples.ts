@@ -1,11 +1,16 @@
 // Integration test runner: executes a skill against every case in its
-// `examples.json` inside the Docker sandbox and reports pass/fail.
+// `examples.json` inside the Docker sandbox and reports pass/fail. Stages:
+// validate, unit (node --test in the sandbox), examples, lint (Biome + tsc on
+// the host with the repo's rules, see lib/skill-lint.ts; never runs skill code).
 //
-// stdout: exactly one JSON summary line (exit 0 on PASS, 1 on FAIL).
+// stdout: exactly one JSON summary line (exit 0 on PASS, 1 on FAIL). Exit 2
+// without a summary on a usage error or when <skillDir> is not work/<skill>,
+// fixtures/skills/<skill> or .claude/skills/<skill> (see `resolveSkillDir`).
 // Full output: logs/<skill>/<timestamp>.log; one line per result: logs/<skill>/latest.log.
 
 import {
   appendFileSync,
+  globSync,
   mkdirSync,
   readFileSync,
   statSync,
@@ -18,15 +23,24 @@ import {
   matchExample,
   validateExamples,
 } from "./lib/examples.ts";
-import { runInSandbox, type SandboxResult, SKILL_MOUNT } from "./sandbox.ts";
+import { lintSkill } from "./lib/skill-lint.ts";
+import {
+  resolveSkillDir,
+  runInSandbox,
+  type SandboxResult,
+  SKILL_MOUNT,
+} from "./sandbox.ts";
 
 export const MAX_REASON_LENGTH = 500;
 const UNIT_TIMEOUT_MS = 120_000;
+/** Relative to the skill dir; the same glob `node --test` gets in the sandbox. */
+const UNIT_TEST_GLOB = "tests/**/*.test.ts";
+const NO_UNIT_TESTS = `tests/ has no ${UNIT_TEST_GLOB} files`;
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const FAILED_TEST_LINE = /^\s*✖\s+(.*?)(?:\s+\(\d[\d.]*m?s\))?$/u;
 const ISO_FRACTION = /\.\d+Z$/;
 
-export type Stage = "validate" | "unit" | "examples" | "sandbox";
+export type Stage = "validate" | "unit" | "examples" | "lint" | "sandbox";
 
 export type Summary =
   | {
@@ -71,6 +85,10 @@ export const failedTestNames = (output: string): string[] => {
   }
   return [...names];
 };
+
+/** `lint` stage reason: the fixer to run first, then every problem. */
+export const lintReason = (skillName: string, problems: string[]): string =>
+  `${problems.length} lint problem(s); run \`node scripts/fix-skill.ts ${skillName}\` for safe fixes, fix the rest by hand: ${problems.join("; ")}`;
 
 interface Logger {
   /** Full log only. */
@@ -140,6 +158,17 @@ const sandboxSection = (title: string, result: SandboxResult): string =>
     result.stderr,
   ].join("\n");
 
+/**
+ * Unit test files of a skill, or `undefined` when it has no `tests/`
+ * directory (unit stage skipped). An empty list fails the unit stage.
+ */
+export const findUnitTests = (skillDir: string): string[] | undefined => {
+  const hasTestsDir = statSync(path.join(skillDir, "tests"), {
+    throwIfNoEntry: false,
+  })?.isDirectory();
+  return hasTestsDir ? globSync(UNIT_TEST_GLOB, { cwd: skillDir }) : undefined;
+};
+
 const runUnitTests = async (
   skillDir: string,
   log: Logger
@@ -149,7 +178,7 @@ const runUnitTests = async (
     command: [
       "--test",
       "--test-reporter=spec",
-      `${SKILL_MOUNT}/tests/**/*.test.ts`,
+      `${SKILL_MOUNT}/${UNIT_TEST_GLOB}`,
     ],
     onRunLog: log.detail,
     skillDir,
@@ -199,16 +228,17 @@ const run = async (skillDir: string, log: Logger): Promise<Summary> => {
     };
   };
 
-  const hasTests = statSync(path.join(skillDir, "tests"), {
-    throwIfNoEntry: false,
-  })?.isDirectory();
-  if (hasTests) {
+  const unitTests = findUnitTests(skillDir);
+  if (unitTests === undefined) {
+    log.result("SKIP unit tests (no tests/ directory)");
+  } else if (unitTests.length === 0) {
+    log.result(`FAIL unit tests: ${NO_UNIT_TESTS}`);
+    fail("unit", NO_UNIT_TESTS);
+  } else {
     const unit = await runUnitTests(skillDir, log);
     if (!unit.pass) {
       fail("unit", unit.reason);
     }
-  } else {
-    log.result("SKIP unit tests (no tests/ directory)");
   }
 
   let passed = 0;
@@ -243,12 +273,23 @@ const run = async (skillDir: string, log: Logger): Promise<Summary> => {
     }
   }
 
+  // Last, so functional failures lead the summary; see lib/skill-lint.ts.
+  log.detail("=== lint (biome + tsc)");
+  const lint = await lintSkill(REPO_ROOT, skillDir);
+  if (lint.pass) {
+    log.result("PASS lint");
+  } else {
+    log.detail(lint.problems.join("\n"));
+    log.result(`FAIL lint: ${lint.problems.length} problem(s)`);
+    fail("lint", lintReason(path.basename(skillDir), lint.problems));
+  }
+
   return (
     firstFailure ?? {
       examples: { passed, total: examples.length },
       log: log.relativePath,
       status: "PASS",
-      unit: hasTests ? "pass" : "skipped",
+      unit: unitTests === undefined ? "skipped" : "pass",
     }
   );
 };
@@ -260,7 +301,14 @@ const main = async (): Promise<void> => {
     process.exitCode = 2;
     return;
   }
-  const resolvedDir = path.resolve(skillDir);
+  let resolvedDir: string;
+  try {
+    resolvedDir = resolveSkillDir(skillDir);
+  } catch (error) {
+    process.stderr.write(`run-examples: ${(error as Error).message}\n`);
+    process.exitCode = 2;
+    return;
+  }
   const log = createLogger(path.basename(resolvedDir));
   log.detail(`skill: ${resolvedDir}\nstarted: ${new Date().toISOString()}`);
   let summary: Summary;
