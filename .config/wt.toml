@@ -1,0 +1,10 @@
+# Worktrunk project config — https://worktrunk.dev/config/
+
+# Runs once when a new worktree is created; blocks until done so the worktree
+# is ready to use. Both commands are independent, so they run concurrently.
+[pre-start]
+# Reproducible install from package-lock.json; node_modules is not shared between worktrees.
+install = "npm ci"
+# .env is gitignored, so git doesn't carry it into new worktrees; copy it from the primary checkout.
+# Skipped when the primary has no .env: a failing pre-start hook would abort worktree creation.
+env = "if [ -f '{{ primary_worktree_path }}/.env' ]; then cp '{{ primary_worktree_path }}/.env' '{{ worktree_path }}/.env'; fi"
