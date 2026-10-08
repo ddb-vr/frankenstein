@@ -15,12 +15,11 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { SKILL_NAME } from "./lib/examples.ts";
-import { readRegistry } from "./registry.ts";
+import { SKILL_ENTRY, SKILL_NAME } from "./lib/examples.ts";
+import { type RegistryEntry, readRegistry } from "./registry.ts";
 import { runInSandbox, type SandboxResult, SKILL_MOUNT } from "./sandbox.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
-const ENTRY = "scripts/main.ts";
 const INPUT_FILE_FLAG = "--input-file";
 const USAGE =
   "usage: node scripts/run-skill.ts <skill> '<json>' | node scripts/run-skill.ts <skill> --input-file <path>";
@@ -98,19 +97,23 @@ const writeLog = (name: string, lines: string[]): string => {
   return path.relative(REPO_ROOT, file).replaceAll("\\", "/");
 };
 
-const run = async ({ name, input }: Invocation): Promise<number> => {
+/** The skill's registry entry; throws unless it is installed and enabled. */
+export const enabledEntry = (root: string, name: string): RegistryEntry => {
   if (!SKILL_NAME.test(name)) {
     throw new Error(`invalid skill name "${name}"`);
   }
-  const entry = readRegistry(REPO_ROOT).skills.find(
-    (skill) => skill.name === name
-  );
+  const entry = readRegistry(root).skills.find((skill) => skill.name === name);
   if (!entry) {
     throw new Error(`skill "${name}" is not installed`);
   }
   if (!entry.enabled) {
     throw new Error(`skill "${name}" is disabled`);
   }
+  return entry;
+};
+
+const run = async ({ name, input }: Invocation): Promise<number> => {
+  const entry = enabledEntry(REPO_ROOT, name);
   const header = [
     `skill: ${name} ${entry.version}`,
     `network: ${entry.network}`,
@@ -120,7 +123,7 @@ const run = async ({ name, input }: Invocation): Promise<number> => {
   let result: SandboxResult;
   try {
     result = await runInSandbox({
-      command: [`${SKILL_MOUNT}/${ENTRY}`],
+      command: [`${SKILL_MOUNT}/${SKILL_ENTRY}`],
       network: entry.network,
       onRunLog: (record) => runRecords.push(record),
       skillDir: path.join(REPO_ROOT, ".claude", "skills", name),

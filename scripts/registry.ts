@@ -3,25 +3,32 @@
 //   node scripts/registry.ts install <skill> [--issue <n>] [--network]
 //
 // `install` is the only way into `.claude/skills/`. It requires the locked
-// examples (unchanged), an `approve` verdict in `work/<skill>/review.json` and
+// examples (unchanged), an `approve` verdict in `work/<skill>/review.json`
+// captured for those locked examples (its `examplesHash` equals the lock), and
 // a fresh passing `run-examples`, then copies the skill, updates the registry,
 // commits, tags and pushes as the GitHub App bot. The issue defaults to
 // `work/<skill>/issue.json` (written by `tracker.ts open`). Output is one JSON
 // line: `{ installed, version, commit }`, or `{ installed: false, reason }`
 // (exit 1).
+//
+// The bot credentials are resolved before anything changes. If the copy,
+// commit, tag or push fails, install restores `.claude/skills/<skill>`,
+// `registry.json`, the index, HEAD and the tag as they were.
 
 import { execFile } from "node:child_process";
 import {
   cpSync,
   existsSync,
+  mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseArgs, promisify } from "node:util";
-import { runAsBot } from "./github-app-token.ts";
-import { loadDotEnv } from "./lib/env.ts";
+import { botEnv, runAsBot } from "./github-app-token.ts";
+import { GITHUB_APP_ENV, loadDotEnv, requireEnvVars } from "./lib/env.ts";
 import { isPlainObject, SKILL_NAME } from "./lib/examples.ts";
 import { readIssueRecord } from "./lib/issue.ts";
 import { examplesPath, readLock, sha256File } from "./lock.ts";
@@ -89,6 +96,8 @@ export type InstallResult =
 export interface InstallDeps {
   /** Runs a command with the GitHub App bot identity; resolves to stdout. */
   bot: (cmd: string, args: readonly string[]) => Promise<string>;
+  /** Resolves the bot credentials; rejects with what is missing or wrong. */
+  credentials: () => Promise<void>;
   /** Read-only git as the local user; resolves to stdout. */
   git: (args: readonly string[]) => Promise<string>;
   now: () => Date;
@@ -122,6 +131,14 @@ const checkReview = (root: string, skill: string): void => {
   if (verdict !== "approve") {
     throw new Error(
       `skill-reviewer verdict is ${JSON.stringify(verdict ?? null)}, not "approve"`
+    );
+  }
+  // The approve must be for the examples locked now (checkLock ran first).
+  const lockHash = readLock(root, skill)?.sha256;
+  const reviewedHash = isPlainObject(review) ? review.examplesHash : undefined;
+  if (reviewedHash !== lockHash) {
+    throw new Error(
+      `work/${skill}/review.json was captured for examplesHash ${JSON.stringify(reviewedHash ?? null)}, but the lock has ${JSON.stringify(lockHash ?? null)}: invoke the skill-reviewer again`
     );
   }
 };
@@ -168,9 +185,77 @@ const nextVersion = async (
   return `v${Math.max(...numbers) + 1}`;
 };
 
+const skillTarget = (root: string, skill: string): string =>
+  path.join(root, ".claude", "skills", skill);
+
+const message = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+/** What install changes, recorded so a failure can restore it. */
+interface Undo {
+  /** Copy of the previously installed skill, inside a temp directory. */
+  backup?: string;
+  head: string;
+  /** `git add`/`commit` pathspec: the installed skill and the registry. */
+  paths: string[];
+  registry: string;
+  skill: string;
+  /** Set before `git add` touches the index. */
+  staged: boolean;
+  /** Set once the local tag exists. */
+  tag?: string;
+}
+
+const prepareUndo = async (deps: InstallDeps, skill: string): Promise<Undo> => {
+  const head = (await deps.git(["-C", deps.root, "rev-parse", "HEAD"])).trim();
+  const undo: Undo = {
+    head,
+    paths: ["--", `.claude/skills/${skill}`, "registry.json"],
+    registry: readFileSync(registryPath(deps.root), "utf8"),
+    skill,
+    staged: false,
+  };
+  const target = skillTarget(deps.root, skill);
+  if (existsSync(target)) {
+    undo.backup = path.join(
+      mkdtempSync(path.join(tmpdir(), "frankenstein-install-")),
+      skill
+    );
+    cpSync(target, undo.backup, { recursive: true });
+  }
+  return undo;
+};
+
+/** Files first (local, cannot need the network), then the git state. */
+const rollback = async (deps: InstallDeps, undo: Undo): Promise<void> => {
+  const target = skillTarget(deps.root, undo.skill);
+  rmSync(target, { force: true, recursive: true });
+  if (undo.backup !== undefined) {
+    cpSync(undo.backup, target, { recursive: true });
+  }
+  writeFileSync(registryPath(deps.root), undo.registry);
+  const repo = ["-C", deps.root];
+  if (undo.tag !== undefined) {
+    await deps.bot("git", [...repo, "tag", "-d", undo.tag]);
+  }
+  const head = (await deps.git([...repo, "rev-parse", "HEAD"])).trim();
+  if (head !== undo.head) {
+    await deps.bot("git", [...repo, "reset", "--soft", undo.head]);
+  }
+  if (undo.staged) {
+    await deps.bot("git", [
+      ...repo,
+      "reset",
+      "--quiet",
+      undo.head,
+      ...undo.paths,
+    ]);
+  }
+};
+
 const copySkill = (root: string, skill: string): void => {
   const source = path.join(root, "work", skill);
-  const target = path.join(root, ".claude", "skills", skill);
+  const target = skillTarget(root, skill);
   rmSync(target, { force: true, recursive: true });
   cpSync(source, target, {
     filter: (file) => !NOT_INSTALLED.has(path.relative(source, file)),
@@ -191,12 +276,14 @@ const writeRegistry = (
 
 const commitAndTag = async (
   deps: InstallDeps,
-  entry: RegistryEntry
+  entry: RegistryEntry,
+  undo: Undo
 ): Promise<string> => {
   const { name, version, issue } = entry;
   const repo = ["-C", deps.root];
-  const paths = ["--", `.claude/skills/${name}`, "registry.json"];
+  const { paths } = undo;
   const tag = `skill/${name}@${version}`;
+  undo.staged = true;
   await deps.bot("git", [...repo, "add", ...paths]);
   await deps.bot("git", [
     ...repo,
@@ -216,6 +303,7 @@ const commitAndTag = async (
     "-m",
     `${name} ${version}`,
   ]);
+  undo.tag = tag;
   await deps.bot("git", [
     ...repo,
     ...BOT_CREDENTIALS,
@@ -228,47 +316,77 @@ const commitAndTag = async (
   return commit;
 };
 
+/** Everything install requires before it may change any file. */
+const checkInstallable = async (
+  skill: string,
+  options: InstallOptions,
+  deps: InstallDeps
+): Promise<{ entry: RegistryEntry; registry: Registry }> => {
+  if (!SKILL_NAME.test(skill)) {
+    throw new Error(`invalid skill name "${skill}"`);
+  }
+  const issue = options.issue ?? readIssueRecord(deps.root, skill)?.issue;
+  if (issue === undefined) {
+    throw new Error(
+      `no build issue: pass --issue <n> or open one with \`node scripts/tracker.ts open --skill ${skill}\``
+    );
+  }
+  const examplesHash = checkLock(deps.root, skill);
+  checkReview(deps.root, skill);
+  await deps.credentials();
+  const summary = await deps.runExamples(path.join(deps.root, "work", skill));
+  if (summary.status !== "PASS") {
+    throw new Error(
+      `run-examples failed at ${summary.stage}: ${summary.reason}`
+    );
+  }
+  const registry = readRegistry(deps.root);
+  const previous = registry.skills.find((item) => item.name === skill);
+  const entry: RegistryEntry = {
+    enabled: true,
+    examplesHash,
+    installedAt: deps.now().toISOString(),
+    issue,
+    name: skill,
+    network: options.network,
+    version: await nextVersion(deps, skill, previous),
+  };
+  return { entry, registry };
+};
+
 export const install = async (
   skill: string,
   options: InstallOptions,
   deps: InstallDeps
 ): Promise<InstallResult> => {
+  let undo: Undo | undefined;
   try {
-    if (!SKILL_NAME.test(skill)) {
-      throw new Error(`invalid skill name "${skill}"`);
-    }
-    const issue = options.issue ?? readIssueRecord(deps.root, skill)?.issue;
-    if (issue === undefined) {
-      throw new Error(
-        `no build issue: pass --issue <n> or open one with \`node scripts/tracker.ts open --skill ${skill}\``
-      );
-    }
-    const examplesHash = checkLock(deps.root, skill);
-    checkReview(deps.root, skill);
-    const summary = await deps.runExamples(path.join(deps.root, "work", skill));
-    if (summary.status !== "PASS") {
-      throw new Error(
-        `run-examples failed at ${summary.stage}: ${summary.reason}`
-      );
-    }
-    const registry = readRegistry(deps.root);
-    const previous = registry.skills.find((item) => item.name === skill);
-    const entry: RegistryEntry = {
-      enabled: true,
-      examplesHash,
-      installedAt: deps.now().toISOString(),
-      issue,
-      name: skill,
-      network: options.network,
-      version: await nextVersion(deps, skill, previous),
-    };
+    const { entry, registry } = await checkInstallable(skill, options, deps);
+    undo = await prepareUndo(deps, skill);
     copySkill(deps.root, skill);
     writeRegistry(deps.root, registry, entry);
-    const commit = await commitAndTag(deps, entry);
+    const commit = await commitAndTag(deps, entry, undo);
     return { commit, installed: skill, version: entry.version };
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    return { installed: false, reason };
+    if (undo === undefined) {
+      return { installed: false, reason: message(error) };
+    }
+    try {
+      await rollback(deps, undo);
+    } catch (rollbackError) {
+      return {
+        installed: false,
+        reason: `${message(error)}; rollback failed, check .claude/skills/${skill}, registry.json and git status: ${message(rollbackError)}`,
+      };
+    }
+    return {
+      installed: false,
+      reason: `${message(error)} (rolled back, nothing installed)`,
+    };
+  } finally {
+    if (undo?.backup !== undefined) {
+      rmSync(path.dirname(undo.backup), { force: true, recursive: true });
+    }
   }
 };
 
@@ -298,6 +416,10 @@ const runExamplesScript = async (skillDir: string): Promise<Summary> => {
 
 const realDeps: InstallDeps = {
   bot: (cmd, args) => runAsBot(cmd, args),
+  credentials: async () => {
+    requireEnvVars(GITHUB_APP_ENV);
+    await botEnv();
+  },
   git: async (args) =>
     (await execFileAsync("git", args, { encoding: "utf8", windowsHide: true }))
       .stdout,

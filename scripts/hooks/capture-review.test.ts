@@ -1,19 +1,33 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import { type CaptureOutcome, captureReview } from "./capture-review.ts";
-import { HOOK_LOG_ENV } from "./lib.ts";
+import { lockFilePath } from "../lock.ts";
+import {
+  type CaptureOutcome,
+  captureReview,
+  NO_VALID_BLOCK,
+} from "./capture-review.ts";
+import { HOOK_LOG_ENV, REPO_ROOT } from "./lib.ts";
 import { runHookProcess } from "./testing.ts";
 
 const SKILL = "ico-check";
 const NOW = new Date("2026-10-08T12:00:00.000Z");
+const HASH = "a".repeat(64);
 const NOT_RECORDED = /Your verdict was not recorded: no fenced `verdict` block/;
 const NEEDS_REASON = /a reject needs at least one actionable reason/;
-const UNKNOWN_SKILL = /work\/<skill> does not exist/;
-const NO_VERDICT = /no verdict recorded/;
-const FINAL = /is final \(round \d, (approve|reject)\)/;
+const UNKNOWN_SKILL = /work\/other-skill does not exist/;
+const NOT_JSON = /the `verdict` block is not valid JSON/;
+const DUPLICATED = /found 2 fenced `verdict` blocks; send exactly one/;
+const NO_SKILL_NAMED = /no existing work\/<skill> is named/;
 
 let root = "";
 
@@ -60,59 +74,79 @@ const review = (): unknown =>
     readFileSync(path.join(root, "work", SKILL, "review.json"), "utf8")
   );
 
+const reviewsLog = (): Record<string, unknown>[] =>
+  readFileSync(path.join(root, "logs", SKILL, "reviews.log"), "utf8")
+    .trimEnd()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+
 const reject = {
   reasons: ["handle 7-digit IČO"],
   skill: SKILL,
   verdict: "reject",
 };
 const approve = { reasons: [], skill: SKILL, verdict: "approve" };
+const failClosed = {
+  capturedAt: NOW.toISOString(),
+  examplesHash: null,
+  reasons: [NO_VALID_BLOCK],
+  skill: SKILL,
+  verdict: "reject",
+};
 
-test("an approve is recorded and final", () => {
+const lock = (): void => {
+  mkdirSync(path.dirname(lockFilePath(root, SKILL)), { recursive: true });
+  writeFileSync(
+    lockFilePath(root, SKILL),
+    JSON.stringify({ lockedAt: NOW.toISOString(), sha256: HASH, skill: SKILL })
+  );
+};
+
+test("a review records the examples hash of the lock", () => {
+  lock();
   assert.equal(stop(answer(approve)).kind, "written");
   assert.deepEqual(review(), {
     ...approve,
-    reviewedAt: NOW.toISOString(),
-    round: 1,
+    capturedAt: NOW.toISOString(),
+    examplesHash: HASH,
   });
-  const again = stop(answer(reject));
-  assert.equal(again.kind, "skipped");
-  assert.match(again.kind === "skipped" ? again.message : "", FINAL);
-  assert.partialDeepStrictEqual(review(), { verdict: "approve" });
 });
 
-test("a reject allows exactly one more review round", () => {
-  stop(answer(reject));
+test("each new review supersedes the previous one, approve included", () => {
+  stop(answer(approve));
+  assert.partialDeepStrictEqual(review(), { verdict: "approve" });
+  assert.equal(stop(answer(reject)).kind, "written");
   assert.deepEqual(review(), {
     ...reject,
-    reviewedAt: NOW.toISOString(),
-    round: 1,
+    capturedAt: NOW.toISOString(),
+    examplesHash: null,
   });
   stop(answer(approve));
-  assert.deepEqual(review(), {
-    ...approve,
-    reviewedAt: NOW.toISOString(),
-    round: 2,
-  });
-
-  rmSync(path.join(root, "work", SKILL, "review.json"));
-  stop(answer(reject));
-  stop(answer({ ...reject, reasons: ["still wrong"] }));
-  const third = stop(answer(approve));
-  assert.equal(third.kind, "skipped");
-  assert.deepEqual(review(), {
-    ...reject,
-    reasons: ["still wrong"],
-    reviewedAt: NOW.toISOString(),
-    round: 2,
-  });
-});
-
-test("the last verdict block in the answer wins", () => {
-  stop(`Draft:\n${answer(reject)}\nOn reflection:\n${answer(approve)}`);
   assert.partialDeepStrictEqual(review(), { verdict: "approve" });
+  const asWritten = (verdict: object) => ({
+    ...verdict,
+    capturedAt: NOW.toISOString(),
+    examplesHash: null,
+  });
+  assert.deepEqual(
+    reviewsLog().map((entry) => [entry.outcome, entry.review]),
+    [
+      ["written", asWritten(approve)],
+      ["written", asWritten(reject)],
+      ["written", asWritten(approve)],
+    ]
+  );
 });
 
-test("a malformed answer gets one retry, then nothing is recorded", () => {
+test("more than one verdict block is invalid", () => {
+  const twice = `Draft:\n${answer(reject)}\nOn reflection:\n${answer(approve)}`;
+  const first = stop(twice);
+  assert.match(first.kind === "retry" ? first.reason : "", DUPLICATED);
+  assert.equal(stop(twice, false).kind, "written");
+  assert.deepEqual(review(), failClosed);
+});
+
+test("a malformed answer gets one retry, then a reject is recorded", () => {
   const first = stop("Looks good to me.");
   assert.equal(first.kind, "retry");
   assert.match(first.kind === "retry" ? first.reason : "", NOT_RECORDED);
@@ -125,10 +159,34 @@ test("a malformed answer gets one retry, then nothing is recorded", () => {
   const unknown = stop(answer({ ...approve, skill: "other-skill" }));
   assert.match(unknown.kind === "retry" ? unknown.reason : "", UNKNOWN_SKILL);
 
-  const retried = stop("Still no block.", false);
-  assert.equal(retried.kind, "skipped");
-  assert.match(retried.kind === "skipped" ? retried.message : "", NO_VERDICT);
+  // No skill named: nothing to write.
+  const unnamed = stop("Still no block.", false);
+  assert.equal(unnamed.kind, "skipped");
+  assert.match(
+    unnamed.kind === "skipped" ? unnamed.message : "",
+    NO_SKILL_NAMED
+  );
   assert.throws(review);
+
+  // The block names the skill: the earlier approve is replaced by a reject.
+  stop(answer(approve));
+  const invalid = `\`\`\`verdict\n{ "skill": "${SKILL}", "verdict": "approve", }\n\`\`\``;
+  const retried = stop(invalid);
+  assert.match(retried.kind === "retry" ? retried.reason : "", NOT_JSON);
+  const final = stop(invalid, false);
+  assert.equal(final.kind, "written");
+  assert.match(final.kind === "written" ? (final.problem ?? "") : "", NOT_JSON);
+  assert.deepEqual(review(), failClosed);
+  // The unknown skill and the block-less answers name no existing skill.
+  assert.deepEqual(
+    reviewsLog().map(({ outcome, problem }) => [outcome, problem]),
+    [
+      ["retry", "a reject needs at least one actionable reason"],
+      ["written", undefined],
+      ["retry", "the `verdict` block is not valid JSON"],
+      ["written", "the `verdict` block is not valid JSON"],
+    ]
+  );
 });
 
 test("a hand-back report is recorded and that reviewer's closing stop is ignored", () => {
@@ -146,25 +204,55 @@ test("a hand-back report is recorded and that reviewer's closing stop is ignored
     );
   assert.equal(handback("No block here.").kind, "retry");
   assert.equal(handback(answer(reject)).kind, "written");
-  assert.partialDeepStrictEqual(review(), { round: 1, verdict: "reject" });
+  assert.partialDeepStrictEqual(review(), { verdict: "reject" });
   // Same agent: its closing text is not the report.
   assert.deepEqual(closingStop("a2"), { kind: "ignored" });
   // A later reviewer without hand-back still reports at stop.
   assert.equal(stop("Handed back.").kind, "retry");
-
-  // A valid hand-back that is not recorded (verdict final) also ends the review.
+  // A later hand-back supersedes the reject.
   assert.equal(handback(answer(approve), "a3").kind, "written");
-  assert.equal(handback(answer(reject), "a4").kind, "skipped");
-  assert.deepEqual(closingStop("a4"), { kind: "ignored" });
+  assert.partialDeepStrictEqual(review(), { verdict: "approve" });
 });
 
-test("hook process blocks a malformed stop, ignores other agents and logs each decision", async () => {
+test("hand-back retries are bounded: the second failure records a reject", () => {
+  const invalid = answer({ ...reject, reasons: [] });
+  assert.equal(handback(invalid, "a5").kind, "retry");
+  assert.ok(existsSync(path.join(root, "work", ".run", "handback-a5.retry")));
+  const second = handback(invalid, "a5");
+  assert.equal(second.kind, "written");
+  assert.deepEqual(review(), failClosed);
+  // The hand-back was the report: its closing stop is ignored.
+  assert.deepEqual(
+    captureReview(
+      {
+        agentId: "a5",
+        agentType: "skill-reviewer",
+        message: "Done.",
+        retryAllowed: true,
+        source: "stop",
+      },
+      root,
+      NOW
+    ),
+    { kind: "ignored" }
+  );
+});
+
+test("hook process blocks a malformed stop, ignores other agents and logs each decision", async (t) => {
   const log = path.join(root, "hooks.log");
+  // The process works on the real repo: a unique agent keeps its hand-back
+  // retry marker apart from real runs; removed afterwards.
+  const agentId = `test-${process.pid}-${Date.now()}`;
+  t.after(() =>
+    rmSync(path.join(REPO_ROOT, "work", ".run", `handback-${agentId}.retry`), {
+      force: true,
+    })
+  );
   const run = (input: Record<string, unknown>) =>
     runHookProcess(
       "capture-review.ts",
       JSON.stringify({
-        agent_id: "a1b2",
+        agent_id: agentId,
         cwd: root,
         hook_event_name: "SubagentStop",
         session_id: "6f1c2a7e-0b8d-4d6b-9a51-2f4e8c1d3b90",

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 import { checkFileWrite, type FileGuardContext } from "./guard-files.ts";
-import { REPO_ROOT } from "./lib.ts";
+import { REPO_ROOT, resolveSymlinks } from "./lib.ts";
 import { hookInput, recordedInput, runHookProcess } from "./testing.ts";
 
 const ROOT = "/repo";
@@ -10,12 +13,15 @@ const LOCKED = /examples\.json is locked/;
 const REVIEW_BY_HOOK = /written only by the capture-review hook/;
 const SKILLS_PROTECTED = /\.claude\/skills is protected/;
 const HOOK_FAILED = /hook guard-files\.ts failed/;
+const THROUGH_SYMLINK = /resolves to .* through a symlink/;
 
+/** Without symlinks: paths resolve to themselves. */
 const context = (
   existing: string[] = [],
   root: string = ROOT
 ): FileGuardContext => ({
   exists: (relativePath) => existing.includes(relativePath),
+  realPath: (filePath) => filePath,
   root,
 });
 
@@ -53,6 +59,8 @@ test("lock files, installed skills, settings, scripts and registry are protected
     "/repo/.claude/settings.local.json",
     "/repo/scripts/hooks/budget.ts",
     "/repo/registry.json",
+    "/repo/work/.run/6f1c2a7e-0b8d-4d6b-9a51-2f4e8c1d3b90.json",
+    "/repo/work/.run/current.json",
     // Relative traversal and case variants resolve to the same files.
     "work/csv-sum/../../.claude/skills/x/SKILL.md",
     "/repo/.Claude/Skills/x/SKILL.md",
@@ -108,6 +116,32 @@ test("NotebookEdit paths and calls without a path", () => {
     )
   );
   assert.ok(checkFileWrite(hookInput("Write", { content: "x" }), context()));
+});
+
+test("symlinks cannot redirect a write into a protected path", (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "guard-files-test-"));
+  t.after(() => rmSync(root, { force: true, recursive: true }));
+  const skill = path.join(root, "work", "csv-sum");
+  mkdirSync(path.join(root, ".claude", "skills"), { recursive: true });
+  mkdirSync(skill, { recursive: true });
+  symlinkSync(".", path.join(skill, "self"));
+  symlinkSync("../..", path.join(skill, "up"));
+  // Dangling: a write through it would create the registry.
+  symlinkSync("../../registry.json", path.join(skill, "reg"));
+  const real: FileGuardContext = {
+    exists: () => false,
+    realPath: (filePath, cwd) => resolveSymlinks(path.resolve(cwd, filePath)),
+    root,
+  };
+  const check = (file: string) =>
+    checkFileWrite(write(path.join(skill, file), root), real);
+  assert.match(check("self/review.json") ?? "", REVIEW_BY_HOOK);
+  assert.match(check("self/review.json") ?? "", THROUGH_SYMLINK);
+  assert.match(check("up/.claude/skills/x/SKILL.md") ?? "", SKILLS_PROTECTED);
+  assert.ok(check("up/scripts/new-dir/x.ts"));
+  assert.ok(check("reg"));
+  assert.equal(check("self/scripts/main.ts"), undefined);
+  assert.equal(check("notes.md"), undefined);
 });
 
 test("hook process denies via JSON + exit 2, allows silently, fails closed", async () => {

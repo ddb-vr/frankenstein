@@ -1,7 +1,9 @@
 // PreToolUse hook (matcher `Write|Edit|MultiEdit|NotebookEdit`): blocks file
 // tool writes to locked acceptance examples, review verdicts (written only by
-// `capture-review.ts`), lock files, installed skills, Claude settings, repo
-// scripts and the registry.
+// `capture-review.ts`), lock files, run state, installed skills, Claude
+// settings, repo scripts and the registry. The target is matched both as
+// given and with symlinks resolved, so a link (`work/x/self -> .`) cannot
+// redirect a write into a protected path.
 
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -11,12 +13,15 @@ import {
   isWithin,
   REPO_ROOT,
   repoRelative,
+  resolveSymlinks,
   runHook,
 } from "./lib.ts";
 
 export interface FileGuardContext {
   /** Whether a repo-relative path exists. */
   exists: (relativePath: string) => boolean;
+  /** Absolute path of `filePath` (relative to `cwd`) with symlinks resolved. */
+  realPath: (filePath: string, cwd: string) => string;
   root: string;
 }
 
@@ -29,6 +34,10 @@ const USER_OWNED = "it is maintained by the user; ask them to change it";
 // Repo-relative, lower-case (see `repoRelative`).
 const PROTECTED: readonly { entry: string; reason: string }[] = [
   { entry: "work/.locks", reason: LOCKED_BY_SCRIPT },
+  {
+    entry: "work/.run",
+    reason: "run state is written only by the hooks (budget, capture-review)",
+  },
   { entry: ".claude/skills", reason: INSTALLED_BY_SCRIPT },
   { entry: ".claude/settings.json", reason: USER_OWNED },
   { entry: ".claude/settings.local.json", reason: USER_OWNED },
@@ -41,19 +50,11 @@ const PROTECTED: readonly { entry: string; reason: string }[] = [
 
 const WORK_JSON = /^work\/([^/]+)\/(examples|review)\.json$/;
 
-export const checkFileWrite = (
-  input: HookInput,
+/** Why a write to repo-relative `relative` is denied, if it is. */
+const protectedReason = (
+  relative: string,
   context: FileGuardContext
 ): Decision => {
-  const { file_path: filePath, notebook_path: notebookPath } = input.tool_input;
-  const target = filePath ?? notebookPath;
-  if (typeof target !== "string") {
-    return `Blocked: ${input.tool_name} call without a file path.`;
-  }
-  const relative = repoRelative(target, context.root, input.cwd);
-  if (relative === undefined) {
-    return;
-  }
   for (const { entry, reason } of PROTECTED) {
     if (isWithin(relative, entry)) {
       return `Blocked: ${entry} is protected; ${reason}.`;
@@ -68,10 +69,36 @@ export const checkFileWrite = (
   }
 };
 
+export const checkFileWrite = (
+  input: HookInput,
+  context: FileGuardContext
+): Decision => {
+  const { file_path: filePath, notebook_path: notebookPath } = input.tool_input;
+  const target = filePath ?? notebookPath;
+  if (typeof target !== "string") {
+    return `Blocked: ${input.tool_name} call without a file path.`;
+  }
+  const lexical = repoRelative(target, context.root, input.cwd);
+  const resolved = repoRelative(
+    context.realPath(target, input.cwd),
+    context.realPath(context.root, context.root)
+  );
+  for (const relative of [lexical, resolved]) {
+    const reason =
+      relative === undefined ? undefined : protectedReason(relative, context);
+    if (reason !== undefined) {
+      return relative === lexical
+        ? reason
+        : `${reason} (${target} resolves to ${relative} through a symlink)`;
+    }
+  }
+};
+
 if (import.meta.main) {
   runHook((input) =>
     checkFileWrite(input, {
       exists: (relativePath) => existsSync(path.join(REPO_ROOT, relativePath)),
+      realPath: (filePath, cwd) => resolveSymlinks(path.resolve(cwd, filePath)),
       root: REPO_ROOT,
     })
   );

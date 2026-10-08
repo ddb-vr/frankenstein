@@ -1,8 +1,9 @@
 // Minimal shell tokenizer for hook heuristics (Bash and simple PowerShell).
 // Splits a command line into simple commands on unquoted `;`, `&`, `&&`, `|`,
-// `||`, parentheses, backticks and newlines, removes quotes, separates redirect targets
-// and flags command/process substitution. Not a full shell parser: callers
-// treat it as a second layer behind permissions and file guards.
+// `||`, parentheses, backticks and newlines, removes quotes, separates redirect targets,
+// marks commands fed by a pipe and flags command/process substitution. Not a
+// full shell parser: callers treat it as a second layer behind permissions
+// and file guards.
 
 export interface Word {
   /** Source text including quotes and backslashes (PowerShell paths). */
@@ -12,6 +13,8 @@ export interface Word {
 }
 
 export interface SimpleCommand {
+  /** Reads the output of the previous command through `|` or `|&`. */
+  piped: boolean;
   redirects: Word[];
   words: Word[];
 }
@@ -41,6 +44,8 @@ export const parseCommand = (source: string): ParsedCommand => {
   let substitution = false;
   let words: Word[] = [];
   let redirects: Word[] = [];
+  // The command being collected is fed by a pipe.
+  let piped = false;
   // `start === -1`: between words. `redirect`: the next word is a target.
   const word: WordState = { redirect: false, start: -1, value: "" };
 
@@ -60,10 +65,14 @@ export const parseCommand = (source: string): ParsedCommand => {
     word.value = "";
   };
 
-  const endCommand = (index: number): void => {
+  const endCommand = (index: number, pipeNext = false): void => {
     endWord(index);
     if (words.length > 0 || redirects.length > 0) {
-      commands.push({ redirects, words });
+      commands.push({ piped, redirects, words });
+      piped = pipeNext;
+    } else {
+      // `|&` and `| (cmd)`: an empty command keeps the pending pipe.
+      piped ||= pipeNext;
     }
     words = [];
     redirects = [];
@@ -163,8 +172,11 @@ export const parseCommand = (source: string): ParsedCommand => {
       return index + 1;
     } else if (char === ">" || char === "<" || (char === "&" && next === ">")) {
       return redirect(index);
-    } else if (COMMAND_SEPARATORS.has(char)) {
+    } else if (char === "|" && next === "|") {
       endCommand(index);
+      return index + 2;
+    } else if (COMMAND_SEPARATORS.has(char)) {
+      endCommand(index, char === "|");
       return index + 1;
     }
     beginWord(index);

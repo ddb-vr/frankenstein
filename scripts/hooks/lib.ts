@@ -29,7 +29,15 @@
 //   report via the `SubagentHandback` tool (`tool_input.message`) instead,
 //   and `last_assistant_message` is only its closing text.
 
-import { appendFileSync, mkdirSync, readFileSync, writeSync } from "node:fs";
+import {
+  appendFileSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  writeSync,
+} from "node:fs";
 import path from "node:path";
 import { isPlainObject } from "../lib/examples.ts";
 
@@ -250,3 +258,34 @@ export const repoRelative = (
 /** `relativePath` is `entry` itself or below it (both repo-relative). */
 export const isWithin = (relativePath: string, entry: string): boolean =>
   relativePath === entry || relativePath.startsWith(`${entry}/`);
+
+// Symlink hops followed before giving up (the Linux limit).
+const MAX_SYMLINK_HOPS = 40;
+
+/**
+ * `absolutePath` with every symlink resolved, also when its tail does not
+ * exist yet: the nearest existing ancestor is resolved and the rest
+ * appended; a dangling symlink resolves to its target (a write creates it).
+ */
+export const resolveSymlinks = (absolutePath: string, hops = 0): string => {
+  try {
+    return realpathSync.native(absolutePath);
+  } catch {
+    // Missing, dangling or unreadable: resolve what exists below.
+  }
+  try {
+    if (lstatSync(absolutePath).isSymbolicLink() && hops < MAX_SYMLINK_HOPS) {
+      const target = path.resolve(
+        path.dirname(absolutePath),
+        readlinkSync(absolutePath)
+      );
+      return resolveSymlinks(target, hops + 1);
+    }
+  } catch {
+    // Does not exist: resolve the parent.
+  }
+  const parent = path.dirname(absolutePath);
+  return parent === absolutePath
+    ? absolutePath
+    : path.join(resolveSymlinks(parent, hops), path.basename(absolutePath));
+};

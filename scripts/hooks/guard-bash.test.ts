@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { checkCommand, checkShell } from "./guard-bash.ts";
+import { checkCommand, checkShell, isEntryPoint } from "./guard-bash.ts";
 import { HOOK_LOG_ENV, REPO_ROOT } from "./lib.ts";
 import { hookInput, recordedInput, runHookProcess } from "./testing.ts";
 
@@ -22,6 +22,9 @@ const DYNAMIC = /cannot be verified/;
 const SHELL = /shells run only as `bash -c/;
 const NESTING = /nested too deeply/;
 const CONTAINERS = /only the sandbox runner starts containers/;
+const SECRETS = /shell access to secrets/;
+const SYMLINKS = /symlinks and hard links/;
+const PIPED_ENTRY = /entry points never read piped input/;
 
 const decide = (command: string, cwd: string = ROOT) =>
   checkShell(hookInput("Bash", { command }, { cwd }), ROOT);
@@ -58,12 +61,16 @@ test("allowed entry points pass, including arguments that look dangerous", () =>
     "npm run check",
     "npm run typecheck",
     "npm run sandbox:build",
+    "node scripts/fix-skill.ts csv-sum",
     "git status",
     "git diff work/csv-sum/examples.json",
     "git log --oneline -- .claude/skills",
     "git log --grep=node",
     "node scripts/run-examples.ts work/csv-sum 2>&1 | tail -20",
     "node scripts/lock.ts a && node scripts/run-examples.ts work/a",
+    // Piping out of an entry point is fine; only piping in is denied.
+    "node scripts/run-skill.ts a '{}' | cat",
+    "false || node scripts/run-skill.ts a '{}'",
   ]);
 });
 
@@ -80,6 +87,8 @@ test("ordinary commands that run no interpreter pass", () => {
     "cd scripts && ls",
     "cd /tmp",
     "docker build -t frankenstein-sandbox sandbox",
+    "cat .env.example",
+    "grep -rn process.env scripts",
   ]);
 });
 
@@ -377,6 +386,81 @@ test("protected files are off limits in shell commands", () => {
       "Remove-Item work\\.locks\\csv-sum.json",
     ],
     PROTECTED
+  );
+});
+
+test("npm entry points are exact: arguments and options are denied", () => {
+  assert.equal(isEntryPoint(["npm", "test"]), true);
+  assert.equal(isEntryPoint(["node", "scripts/fix-skill.ts", "x"]), true);
+  assertDenied(
+    [
+      "npm test -- work/csv-sum/tests/main.test.ts",
+      "npm test --prefix work/csv-sum",
+      "npm run check -- work/csv-sum",
+    ],
+    NOT_ON_HOST
+  );
+});
+
+test("entry points fed by a pipe are denied", () => {
+  assertDenied(
+    [
+      "echo '{}' | node scripts/run-skill.ts csv-sum",
+      "cat work/csv-sum/input.json | node scripts/run-skill.ts csv-sum",
+      "cat x |& node scripts/run-skill.ts csv-sum",
+      "printf x | npm test",
+    ],
+    PIPED_ENTRY
+  );
+});
+
+test("run state in work/.run is off limits in shell commands", () => {
+  assertDenied(
+    [
+      "rm work/.run/6f1c2a7e-0b8d-4d6b-9a51-2f4e8c1d3b90.json",
+      "rm -rf work/.run",
+      "echo '{}' > work/.run/current.json",
+      "node scripts/run-examples.ts work/x > work/.run/current.json",
+      "rm .run/current.json",
+    ],
+    PROTECTED
+  );
+});
+
+test("secrets (.env, *.pem) are never read through the shell", () => {
+  assertDenied(
+    [
+      "cat .env",
+      "base64 < .env",
+      "cp .env /tmp/x",
+      "grep -r TOKEN .env.local",
+      "git diff --no-index /dev/null .env",
+      "git show HEAD:.env",
+      "git grep -h . -- .env",
+      "cat ~/keys/frankenstein.private-key.pem",
+      "openssl rsa -in /Users/me/app.pem",
+      "node scripts/run-skill.ts csv-sum --input-file .env",
+      "bash -c 'cat .env'",
+      "Get-Content .env",
+    ],
+    SECRETS
+  );
+  // `--no-index` reads any file: not a trusted read-only git command.
+  assert.equal(isEntryPoint(["git", "diff", "--no-index", "a", "b"]), false);
+});
+
+test("symlinks and hard links are not created through the shell", () => {
+  assertDenied(
+    [
+      "ln -s . work/csv-sum/self",
+      "ln -s ../.. work/csv-sum/up",
+      "/bin/ln a b",
+      "link a b",
+      "mklink /d a b",
+      "New-Item -ItemType SymbolicLink -Path a -Target b",
+      "ni -ItemType:Junction a",
+    ],
+    SYMLINKS
   );
 });
 

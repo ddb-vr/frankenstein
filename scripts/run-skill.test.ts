@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { promisify } from "node:util";
-import { parseInvocation } from "./run-skill.ts";
+import { enabledEntry, parseInvocation } from "./run-skill.ts";
 
 const execFileAsync = promisify(execFile);
 const RUN_SKILL = path.join(import.meta.dirname, "run-skill.ts");
@@ -14,6 +14,10 @@ const NOT_JSON_FILE = /input file .*input\.json must contain one JSON value/;
 const CANNOT_READ = /cannot read input file/;
 const NEEDS_PATH = /--input-file needs a path/;
 const SECRET = "GITHUB_APP_PRIVATE_KEY_PATH";
+const NOT_JSON_INLINE = /^input must be one JSON value$/;
+const DISABLED = /skill "csv-sum" is disabled/;
+const NOT_INSTALLED = /skill "other" is not installed/;
+const INVALID_NAME = /invalid skill name/;
 
 let dir = "";
 
@@ -91,6 +95,38 @@ test("a bad input file is reported without echoing its content", () => {
       ]),
     CANNOT_READ
   );
+});
+
+test("inline input that is not JSON is rejected without echoing it", () => {
+  // The exact message proves the input is not quoted back.
+  for (const input of [`{${SECRET}: 1}`, "not json"]) {
+    assert.throws(() => parseInvocation(["ico-check", input]), {
+      message: NOT_JSON_INLINE,
+    });
+  }
+});
+
+test("only installed, enabled skills run", () => {
+  const entry = {
+    enabled: true,
+    examplesHash: "a".repeat(64),
+    installedAt: "2026-10-08T12:00:00.000Z",
+    issue: 7,
+    name: "csv-sum",
+    network: false,
+    version: "v1",
+  };
+  const registry = (enabled: boolean) =>
+    writeFileSync(
+      path.join(dir, "registry.json"),
+      JSON.stringify({ skills: [{ ...entry, enabled }] })
+    );
+  registry(true);
+  assert.deepEqual(enabledEntry(dir, "csv-sum"), entry);
+  assert.throws(() => enabledEntry(dir, "other"), NOT_INSTALLED);
+  assert.throws(() => enabledEntry(dir, "../csv-sum"), INVALID_NAME);
+  registry(false);
+  assert.throws(() => enabledEntry(dir, "csv-sum"), DISABLED);
 });
 
 test("CLI exits 1 with a JSON error when the input source is ambiguous", async () => {

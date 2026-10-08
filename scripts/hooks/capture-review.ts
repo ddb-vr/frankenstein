@@ -1,22 +1,28 @@
 // Records the skill-reviewer's final verdict. The reviewer ends its report
-// with a fenced `verdict` block (`{ "skill", "verdict": "approve" | "reject",
-// "reasons": [] }`); this hook writes it to `work/<skill>/review.json`, the
-// file `registry.ts install` checks. File tools never write review.json
-// (guard-files denies it). Two events carry the report:
+// with exactly one fenced `verdict` block (`{ "skill", "verdict": "approve" |
+// "reject", "reasons": [] }`); this hook writes `work/<skill>/review.json`
+// (`{ skill, verdict, reasons, examplesHash, capturedAt }`, `examplesHash`
+// from the examples lock), the file `registry.ts install` checks. File tools
+// never write review.json (guard-files denies it). Two events carry the
+// report:
 // - SubagentStop (matcher `skill-reviewer`): `last_assistant_message`.
 // - PreToolUse (matcher `SubagentHandback`): in auto mode the subagent hands
 //   its report back through that tool (`tool_input.message`); its closing
 //   text at SubagentStop is then not the report, so that stop is ignored.
 //
-// Rounds: a reject may be followed by one more review after another builder
-// iteration. An approve, or the verdict of the last round, is final.
+// Each recorded review supersedes the previous review.json: a new review
+// after a fix replaces an earlier approve or reject.
 //
-// A missing or malformed block sends the reviewer back once (stop blocked or
-// hand-back denied) so it fixes its report; a stop already continued by this
-// hook (`stop_hook_active`) may end and nothing is written, so install keeps
-// refusing. Hook errors also write nothing.
+// A missing, duplicated or invalid block sends the reviewer back once (stop
+// blocked, or hand-back denied; a `handback-<agentId>.retry` marker in
+// work/.run bounds hand-backs). The second failure records
+// `{ "verdict": "reject", "reasons": ["no valid verdict block"] }` for the
+// skill its block names, so install refuses; when no existing skill is named,
+// nothing is written. Every capture (written or retry) is appended to
+// `logs/<skill>/reviews.log`. Hook errors write nothing.
 
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -26,11 +32,14 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { isPlainObject, SKILL_NAME } from "../lib/examples.ts";
+import { readLock } from "../lock.ts";
 import { type LogEntry, logDecision, REPO_ROOT } from "./lib.ts";
 
 export const REVIEWER_AGENT = "skill-reviewer";
-export const MAX_REVIEW_ROUNDS = 2;
+/** Reasons of the reject recorded when the reviewer never sends a valid block. */
+export const NO_VALID_BLOCK = "no valid verdict block";
 const VERDICT_BLOCK = /```verdict[^\S\n]*\n([\s\S]*?)\n[^\S\n]*```/g;
+const SKILL_FIELD = /"skill"\s*:\s*"([^"]*)"/;
 const HANDBACK_TOOL = "SubagentHandback";
 const AGENT_ID = /^[A-Za-z0-9_-]+$/;
 const BLOCK_FORMAT =
@@ -43,8 +52,9 @@ export interface Verdict {
 }
 
 export interface Review extends Verdict {
-  reviewedAt: string;
-  round: number;
+  capturedAt: string;
+  /** sha256 of the locked examples the review covers; null when unlocked. */
+  examplesHash: string | null;
 }
 
 export interface CaptureInput {
@@ -65,16 +75,31 @@ export type CaptureOutcome =
   | { kind: "retry"; reason: string }
   /** Nothing written; `message` is shown to the user. */
   | { kind: "skipped"; message: string }
-  | { kind: "written"; review: Review };
+  /** `problem`: no valid block, so a fail-closed reject was recorded. */
+  | { kind: "written"; problem?: string; review: Review };
 
 /** Marks a reviewer whose verdict arrived by hand-back (its stop is ignored). */
 const handbackMarker = (root: string, agentId: string): string =>
   path.join(root, "work", ".run", `handback-${agentId}`);
 
-/** The last `verdict` block of a message; throws an actionable error. */
+/** Marks a reviewer whose hand-back was already sent back once. */
+const retryMarker = (root: string, agentId: string): string =>
+  `${handbackMarker(root, agentId)}.retry`;
+
+const touch = (file: string, content: string): void => {
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, content);
+};
+
+/** The message's only `verdict` block; throws an actionable error. */
 export const parseVerdict = (message: string): Verdict => {
   const blocks = [...message.matchAll(VERDICT_BLOCK)];
-  const body = blocks.at(-1)?.[1];
+  if (blocks.length > 1) {
+    throw new Error(
+      `found ${blocks.length} fenced \`verdict\` blocks; send exactly one`
+    );
+  }
+  const body = blocks[0]?.[1];
   if (body === undefined) {
     throw new Error("no fenced `verdict` block found");
   }
@@ -108,36 +133,113 @@ export const parseVerdict = (message: string): Verdict => {
   return { reasons, skill, verdict };
 };
 
-const reviewPath = (root: string, skill: string): string =>
-  path.join(root, "work", skill, "review.json");
+const isSkillDir = (root: string, skill: string): boolean =>
+  statSync(path.join(root, "work", skill), {
+    throwIfNoEntry: false,
+  })?.isDirectory() === true;
 
-/** Round of the review already on disk; 0 when there is none. */
-const previousRound = (
-  file: string
-): { round: number; verdict: unknown } | undefined => {
-  let text: string;
-  try {
-    text = readFileSync(file, "utf8");
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return { round: 0, verdict: undefined };
+/** A valid verdict for an existing `work/<skill>`; throws otherwise. */
+const validVerdict = (message: string, root: string): Verdict => {
+  const verdict = parseVerdict(message);
+  if (!isSkillDir(root, verdict.skill)) {
+    throw new Error(
+      `work/${verdict.skill} does not exist; use the exact skill name`
+    );
+  }
+  return verdict;
+};
+
+/** The one existing skill the message's (possibly invalid) blocks name. */
+const namedSkill = (message: string, root: string): string | undefined => {
+  const names = new Set<string>();
+  for (const [, body = ""] of message.matchAll(VERDICT_BLOCK)) {
+    const name = SKILL_FIELD.exec(body)?.[1];
+    if (name !== undefined && SKILL_NAME.test(name) && isSkillDir(root, name)) {
+      names.add(name);
     }
-    throw error;
   }
-  let data: unknown;
+  return names.size === 1 ? [...names][0] : undefined;
+};
+
+/** Appends one JSON line; a broken log never changes the outcome. */
+const logReview = (
+  root: string,
+  skill: string,
+  entry: Record<string, unknown>
+): void => {
   try {
-    data = JSON.parse(text);
+    const file = path.join(root, "logs", skill, "reviews.log");
+    mkdirSync(path.dirname(file), { recursive: true });
+    appendFileSync(file, `${JSON.stringify(entry)}\n`);
   } catch {
-    return;
+    // The decision itself is still logged to logs/hooks.log.
   }
-  if (!isPlainObject(data)) {
-    return;
+};
+
+/** Writes review.json atomically, replacing any earlier review. */
+const writeReview = (root: string, verdict: Verdict, now: Date): Review => {
+  const review: Review = {
+    capturedAt: now.toISOString(),
+    examplesHash: readLock(root, verdict.skill)?.sha256 ?? null,
+    reasons: verdict.reasons,
+    skill: verdict.skill,
+    verdict: verdict.verdict,
+  };
+  const file = path.join(root, "work", verdict.skill, "review.json");
+  const temporary = `${file}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(review, null, 2)}\n`);
+  renameSync(temporary, file);
+  return review;
+};
+
+/** A missing, duplicated or invalid block: one retry, then a reject. */
+const captureFailure = (
+  input: CaptureInput,
+  root: string,
+  now: Date,
+  problem: string
+): CaptureOutcome => {
+  const handbackAgent = input.source === "handback" && input.agentId !== "";
+  const retryAllowed =
+    input.retryAllowed &&
+    (input.source === "stop" ||
+      (handbackAgent && !existsSync(retryMarker(root, input.agentId))));
+  const skill = namedSkill(input.message, root);
+  const logged = {
+    agentId: input.agentId,
+    problem,
+    source: input.source,
+    time: now.toISOString(),
+  };
+  if (retryAllowed) {
+    if (handbackAgent) {
+      touch(retryMarker(root, input.agentId), `${skill ?? ""}\n`);
+    }
+    if (skill !== undefined) {
+      logReview(root, skill, { ...logged, outcome: "retry" });
+    }
+    return {
+      kind: "retry",
+      reason: `Your verdict was not recorded: ${problem}. ${BLOCK_FORMAT}`,
+    };
   }
-  const round =
-    typeof data.round === "number" && Number.isInteger(data.round)
-      ? data.round
-      : 1;
-  return { round, verdict: data.verdict };
+  // The hand-back was this reviewer's report: ignore its closing stop.
+  if (handbackAgent) {
+    touch(handbackMarker(root, input.agentId), `${skill ?? ""}\n`);
+  }
+  if (skill === undefined) {
+    return {
+      kind: "skipped",
+      message: `capture-review: no verdict recorded (${problem}) and no existing work/<skill> is named, so no review.json changed.`,
+    };
+  }
+  const review = writeReview(
+    root,
+    { reasons: [NO_VALID_BLOCK], skill, verdict: "reject" },
+    now
+  );
+  logReview(root, skill, { ...logged, outcome: "written", review });
+  return { kind: "written", problem, review };
 };
 
 export const captureReview = (
@@ -157,53 +259,23 @@ export const captureReview = (
   }
   let verdict: Verdict;
   try {
-    verdict = parseVerdict(input.message);
-    if (!statSync(path.join(root, "work", verdict.skill)).isDirectory()) {
-      throw new Error(`work/${verdict.skill} is not a directory`);
-    }
+    verdict = validVerdict(input.message, root);
   } catch (error) {
     const problem = error instanceof Error ? error.message : String(error);
-    if (!input.retryAllowed) {
-      return {
-        kind: "skipped",
-        message: `capture-review: no verdict recorded (${problem}); install stays blocked.`,
-      };
-    }
-    const unknownSkill =
-      error instanceof Error && "code" in error && error.code === "ENOENT";
-    return {
-      kind: "retry",
-      reason: `Your verdict was not recorded: ${unknownSkill ? "work/<skill> does not exist; use the exact skill name" : problem}. ${BLOCK_FORMAT}`,
-    };
+    return captureFailure(input, root, now, problem);
   }
-  // The hand-back was this reviewer's report, recorded or not: ignore its stop.
+  // The hand-back was this reviewer's report: ignore its closing stop.
   if (input.source === "handback" && input.agentId !== "") {
-    const marker = handbackMarker(root, input.agentId);
-    mkdirSync(path.dirname(marker), { recursive: true });
-    writeFileSync(marker, `${verdict.skill}\n`);
+    touch(handbackMarker(root, input.agentId), `${verdict.skill}\n`);
   }
-  const file = reviewPath(root, verdict.skill);
-  const previous = previousRound(file);
-  if (previous === undefined) {
-    return {
-      kind: "skipped",
-      message: `capture-review: work/${verdict.skill}/review.json is malformed; not overwritten.`,
-    };
-  }
-  if (previous.verdict === "approve" || previous.round >= MAX_REVIEW_ROUNDS) {
-    return {
-      kind: "skipped",
-      message: `capture-review: work/${verdict.skill}/review.json is final (round ${previous.round}, ${String(previous.verdict)}); this review was not recorded.`,
-    };
-  }
-  const review: Review = {
-    ...verdict,
-    reviewedAt: now.toISOString(),
-    round: previous.round + 1,
-  };
-  const temporary = `${file}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(review, null, 2)}\n`);
-  renameSync(temporary, file);
+  const review = writeReview(root, verdict, now);
+  logReview(root, verdict.skill, {
+    agentId: input.agentId,
+    outcome: "written",
+    review,
+    source: input.source,
+    time: now.toISOString(),
+  });
   return { kind: "written", review };
 };
 
@@ -265,9 +337,13 @@ const outputFor = (
     case "skipped":
       return { systemMessage: outcome.message };
     default: {
-      const { round, skill, verdict } = outcome.review;
+      const { skill, verdict } = outcome.review;
+      const why =
+        outcome.problem === undefined
+          ? ""
+          : ` (${NO_VALID_BLOCK}: ${outcome.problem})`;
       return {
-        systemMessage: `capture-review: work/${skill}/review.json = ${verdict} (round ${round}/${MAX_REVIEW_ROUNDS}).`,
+        systemMessage: `capture-review: work/${skill}/review.json = ${verdict}${why}.`,
       };
     }
   }
@@ -294,11 +370,12 @@ const logEntryFor = (
     case "skipped":
       return { ...entry, decision: "allow", reason: outcome.message };
     default: {
-      const { round, skill, verdict } = outcome.review;
+      const { skill, verdict } = outcome.review;
+      const why = outcome.problem === undefined ? "" : ` (${NO_VALID_BLOCK})`;
       return {
         ...entry,
         decision: "allow",
-        reason: `recorded ${skill} ${verdict} (round ${round}).`,
+        reason: `recorded ${skill} ${verdict}${why}.`,
       };
     }
   }

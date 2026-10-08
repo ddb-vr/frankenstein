@@ -9,7 +9,7 @@ Enforce the hackathon hard rules in code via Claude Code hooks and permissions. 
 | examples.json is locked once the user confirms the source of truth | lock file + PreToolUse deny |
 | Nothing lands in `.claude/skills/` except through the install script | permissions deny + PreToolUse deny |
 | Install only with passing tests and an approve verdict | checks inside `registry.ts install` |
-| The review verdict cannot be forged by any agent | `review.json` written only by a SubagentStop hook; writes denied to everyone |
+| The review verdict cannot be forged by any agent | `review.json` written only by the capture-review hook (SubagentStop, or the `SubagentHandback` report in auto mode); writes denied to everyone, also through symlinks |
 | Generated code never executes on the host | PreToolUse deny on Bash |
 | Builder iterations and USD spend per run are capped | PreToolUse budget hook |
 
@@ -32,24 +32,29 @@ Before writing code, check the current Claude Code hooks docs and confirm: hook 
 `guard-files.ts` (PreToolUse, matcher `Write|Edit|MultiEdit|NotebookEdit`) denies:
 
 - any write to `work/<skill>/examples.json` while `work/.locks/<skill>.json` exists,
-- any write under `work/.locks/`,
-- any write to `work/<skill>/review.json` (only the SubagentStop hook writes it, see 6a),
+- any write under `work/.locks/` or `work/.run/` (budget state and review markers, written only by the hooks),
+- any write to `work/<skill>/review.json` (only the capture-review hook writes it, see 6a),
 - any write under `.claude/skills/`, `.claude/settings.json`, `scripts/`, `registry.json`.
+
+The target is matched twice: as given (repo-relative) and with symlinks resolved (`realpath` of the nearest existing ancestor; a dangling link resolves to its target). A link such as `work/<skill>/self -> .` therefore cannot redirect a write to `work/<skill>/self/review.json`.
 
 ## 3. Bash guard – `scripts/hooks/guard-bash.ts`
 
-PreToolUse, matcher `Bash`. Deny when the command:
+PreToolUse, matcher `Bash|PowerShell`. Deny when the command:
 
-- references `examples.json`, `review.json`, `work/.locks`, `.claude/skills`, `.claude/settings.json` or `registry.json` (except the allowed scripts below),
+- references `examples.json`, `review.json`, `work/.locks`, `work/.run`, `.claude/skills`, `.claude/settings.json` or `registry.json` (except as arguments of the allowed scripts below; their redirect targets are still checked),
+- names a secret: `.env` or `.env.*` (not `.env.example`) or any `*.pem`, anywhere in the command, arguments of entry points included (`cat .env`, `git show HEAD:.env`, `git diff --no-index … .env`, `base64 < .env`),
+- creates a symlink or hard link (`ln`, `link`, `mklink`, PowerShell `New-Item -ItemType SymbolicLink|Junction|HardLink`),
 - invokes an interpreter or package manager (`node`, `npx`, `tsx`, `ts-node`, `bun`, `deno`, `python`, `npm`, …) that is not exactly an allowed entry point – also inside `&&`, `;`, `|`, subshells, `$(…)`, `bash -c`/`sh -c` and wrappers (`env`, `xargs`, `find -exec`, `timeout`, …),
+- feeds an entry point through a pipe (`echo '{}' | node scripts/run-skill.ts x`); piping an entry point's output onward (`… | tail`) is fine,
 - uses inline code (`node -e/--eval/-p/--print/--input-type`, `python -c`) or `node --test` outside `npm test`,
 - sets code-loading variables (`NODE_OPTIONS`, `NODE_PATH`, `PYTHONPATH`, `LD_PRELOAD`, `DYLD_*`, `BASH_ENV`, `npm_config_*`),
 - builds the command name dynamically (`$X`, globs, xargs/find placeholders) or feeds a shell without `-c` (script file, stdin, `source`),
 - `cd`s into `work/`, `.claude/skills/` or `fixtures/skills/`, or runs an interpreter while the hook input's `cwd` is inside them,
 - contains `--network` or `docker run` (only our sandbox script may start containers).
 
-Allowed entry points (exact command, from the repo root):
-`node scripts/run-examples.ts …`, `node scripts/run-skill.ts …`, `node scripts/registry.ts …`, `node scripts/lock.ts …`, `node scripts/tracker.ts …`, `node scripts/record-fixture.ts …`, and without extra arguments `npm test`, `npm run check`, `npm run typecheck`, `npm run sandbox:build`; read-only `git` commands.
+Allowed entry points (exact command, from the repo root, not fed by a pipe):
+`node scripts/run-examples.ts …`, `node scripts/run-skill.ts …`, `node scripts/registry.ts …`, `node scripts/lock.ts …`, `node scripts/tracker.ts …`, `node scripts/record-fixture.ts …`, `node scripts/fix-skill.ts …`, and without any extra arguments or options `npm test`, `npm run check`, `npm run typecheck`, `npm run sandbox:build` (`npm test -- <file>` and `npm test --prefix <dir>` are denied: they would run skill code on the host); read-only `git` commands without `--output`, `--ext-diff` or `--no-index`.
 
 Every decision of every hook is appended to `logs/hooks.log` (time, hook, decision, short reason, command truncated to 200 chars).
 
@@ -94,10 +99,10 @@ No agent can write the verdict; the host captures it.
   ```
   ````
 
-- `capture-review.ts` runs on `SubagentStop`. If the finished subagent is not `skill-reviewer`, allow and exit. Otherwise read the reviewer's final message, extract the last `verdict` block, validate it, and write `work/<skill>/review.json` with `{ skill, verdict, reasons, examplesHash (from the lock), capturedAt }`.
-- Missing, duplicated or invalid block → write `{ "verdict": "reject", "reasons": ["no valid verdict block"] }`. Fail closed.
-- Each capture overwrites the previous `review.json` (a new review after a fix supersedes the old one).
-- Log every capture to `logs/<skill>/reviews.log` so the verdict history is visible.
+- `capture-review.ts` runs on `SubagentStop` (and on the `SubagentHandback` tool in auto mode, where that hand-back is the report and the reviewer's closing stop is ignored). If the finished subagent is not `skill-reviewer`, allow and exit. Otherwise read the reviewer's report, require exactly one `verdict` block, validate it (`work/<skill>` must exist), and write `work/<skill>/review.json` with `{ skill, verdict, reasons, examplesHash (sha256 from the lock, null when unlocked), capturedAt }`.
+- Missing, duplicated or invalid block → the reviewer is sent back once (stop blocked, or hand-back denied; a `work/.run/handback-<agentId>.retry` marker bounds hand-back retries). The second failure writes `{ "verdict": "reject", "reasons": ["no valid verdict block"] }` for the skill the block names. Fail closed. If no block names an existing `work/<skill>`, nothing can be written; the hook tells the user.
+- Each capture overwrites the previous `review.json`: a new review after a fix supersedes the old one, an earlier approve included. There are no review rounds in the hook; the meta-skill limits reviews (one more after a reject).
+- Every capture (written or retry) appends one JSON line to `logs/<skill>/reviews.log` (time, source, agent id, outcome, review or problem), so the verdict history is visible. Every hook decision also goes to `logs/hooks.log`.
 
 ## 6. Budget – `scripts/hooks/budget.ts`
 
@@ -117,19 +122,19 @@ PreToolUse, matcher `*` (must stay fast).
 
 Feed recorded hook input JSON into each hook and assert allow/deny:
 
-- guard-files: locked vs unlocked examples, `.claude/skills/` write, Windows-style paths.
-- guard-bash: allowed scripts (including both `run-skill.ts` forms and `record-fixture.ts`), `node work/x/scripts/main.ts`, `cat examples.json`, `docker run`, sneaky variants (`./node`, `&&` chains, `echo … | node scripts/run-skill.ts`).
-- run-skill: inline JSON, `--input-file`, both given, neither given, invalid JSON, disabled skill.
+- guard-files: locked vs unlocked examples, `.claude/skills/` and `work/.run/` writes, Windows-style paths, writes through a symlink (`self -> .`, `up -> ../..`, dangling link to `registry.json`).
+- guard-bash: allowed scripts (including both `run-skill.ts` forms, `record-fixture.ts` and `fix-skill.ts`), `node work/x/scripts/main.ts`, `cat examples.json`, `docker run`, sneaky variants (`./node`, `&&` chains, `echo … | node scripts/run-skill.ts`, `npm test -- <file>`, `npm test --prefix <dir>`), `.env`/`*.pem` reads, `rm work/.run/…`, `ln -s`.
+- run-skill: inline JSON, `--input-file`, both given, neither given, invalid JSON (inline and file), disabled and unknown skill.
 - budget: iteration cap, spend cap from a sample transcript JSONL, incremental offset reading.
-- registry install: each failing precondition returns the right reason (stub `runAsBot` and the runner).
-- capture-review: approve block, reject block, missing block, two blocks, invalid JSON, non-reviewer subagent ignored; guard-files denies a direct write to `review.json`.
+- registry install: each failing precondition returns the right reason (stub `runAsBot` and the runner), including a `review.json` whose `examplesHash` differs from the lock.
+- capture-review: approve block with the lock's `examplesHash`, reject block, a new review superseding an approve, missing block, two blocks, invalid JSON, retry then fail-closed reject, bounded hand-back retries, `reviews.log` lines, non-reviewer subagent ignored; guard-files denies a direct write to `review.json`.
 
 ## 9. Manual verification in Claude Code
 
 1. Ask Claude to edit a locked `examples.json` → denied.
 2. Ask Claude to run `node fixtures/skills/text-stats/scripts/main.ts` → denied; via `run-examples` → allowed.
 3. Set `MAX_BUILDER_ITERATIONS=1`, invoke skill-builder twice → second denied.
-4. Ask the main agent to write `{ "verdict": "approve" }` into a `review.json` itself → denied. Invoke the skill-reviewer on the fixture skill → `review.json` appears, written by the hook.
+4. Ask the main agent to write `{ "verdict": "approve" }` into a `review.json` itself → denied. Copy the fixture into `work/` first (`cp -r fixtures/skills/text-stats work/text-stats`; the hook only records verdicts for an existing `work/<skill>`), then invoke the skill-reviewer with `text-stats` → `work/text-stats/review.json` appears, written by the hook, and `logs/text-stats/reviews.log` gets a line.
 5. Repeat steps 1, 2 and 4 in the Claude desktop app – hooks must behave the same.
 
 ## Done when

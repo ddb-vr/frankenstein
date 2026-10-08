@@ -1,9 +1,9 @@
 // PreToolUse hook (matcher `Bash|PowerShell`): heuristic second layer behind
 // permissions and guard-files. Blocks shell commands that touch protected
-// files, run interpreters outside the allowed entry points (so skill code
-// never runs on the host), enter skill directories, or start containers
-// outside the sandbox runner. Allowed entry points (exact, from the repo
-// root) pass.
+// files or secrets (.env, *.pem), run interpreters outside the allowed entry
+// points (so skill code never runs on the host), create symlinks, enter
+// skill directories, or start containers outside the sandbox runner. Allowed
+// entry points (exact, from the repo root, not fed by a pipe) pass.
 
 import {
   type Decision,
@@ -18,6 +18,7 @@ import { parseCommand, type SimpleCommand, type Word } from "./shell.ts";
 
 /** `node scripts/<file>`: arguments follow and are validated by the script. */
 const NODE_ENTRY_SCRIPTS: Record<string, true> = {
+  "scripts/fix-skill.ts": true,
   "scripts/lock.ts": true,
   "scripts/record-fixture.ts": true,
   "scripts/registry.ts": true,
@@ -43,8 +44,9 @@ const READ_ONLY_GIT: Record<string, true> = {
   show: true,
   status: true,
 };
-// `git diff --output=<file>` writes files; `--ext-diff` runs configured tools.
-const GIT_WRITE_FLAG = /^--(output|ext-diff)/;
+// `git diff --output=<file>` writes files; `--ext-diff` runs configured tools;
+// `--no-index` reads any file, also outside the repo.
+const GIT_UNTRUSTED_FLAG = /^--(output|ext-diff|no-index)/;
 const CHANGE_DIR: Record<string, true> = {
   cd: true,
   chdir: true,
@@ -61,6 +63,15 @@ const PROTECTED = [
   ".locks",
   ".claude",
 ];
+// Budget state and review markers (`work/.run`): hooks write them, nobody else.
+const RUN_STATE = /(^|[/=:])\.run(\/|$)/;
+// `.env` and its variants (not `.env.example`), private keys.
+const SECRET_FILE = /(^|[^a-z0-9_])\.env([^a-z0-9_]|$)|\.pem([^a-z0-9_]|$)/;
+const SECRET_EXAMPLE = ".env.example";
+const LINK_CLI = /(^|\/)(ln|link|mklink)(\.exe)?$/;
+// PowerShell `New-Item -ItemType SymbolicLink` (also `-ItemType:Junction`).
+const NEW_ITEM: Record<string, true> = { "new-item": true, ni: true };
+const LINK_ITEM_TYPE = /(^|:)(symboliclink|junction|hardlink)$/;
 // Directories holding generated or installed skill code (repo-relative).
 const SKILL_CODE_DIRS = ["work", ".claude/skills", "fixtures/skills"];
 const SKILL_CODE_REF =
@@ -187,11 +198,17 @@ const FIND_EXEC: Record<string, true> = {
 };
 
 const PROTECTED_REASON =
-  "Blocked: shell access to protected files (examples.json, review.json, registry.json, work/.locks, .claude). Use the Read tool to inspect them; lock with `node scripts/lock.ts <skill>`, install with `node scripts/registry.ts install <skill>`.";
+  "Blocked: shell access to protected files (examples.json, review.json, registry.json, work/.locks, work/.run, .claude). Use the Read tool to inspect them; lock with `node scripts/lock.ts <skill>`, install with `node scripts/registry.ts install <skill>`; run state is written only by the hooks.";
+const SECRET_REASON =
+  "Blocked: shell access to secrets (.env, *.pem). Scripts load .env themselves; never read, copy or print it (`.env.example` lists the variables).";
+const SYMLINK_REASON =
+  "Blocked: symlinks and hard links can redirect writes past the file guards; create real files and directories instead.";
+const PIPED_ENTRY_REASON =
+  "Blocked: entry points never read piped input. Pass the JSON as an argument (`node scripts/run-skill.ts <skill> '<json>'`) or use `--input-file <path>`.";
 const HOST_EXEC_REASON =
   "Blocked: skill code never runs on the host. Test it in the sandbox with `node scripts/run-examples.ts work/<skill>`; use an installed skill with `node scripts/run-skill.ts <skill> '<json>'` (or `--input-file <path>`).";
 const INTERPRETER_REASON =
-  "Blocked: interpreters and package managers (node, npx, tsx, ts-node, bun, deno, python, npm) run only as an allowed entry point from the repo root: `node scripts/<run-examples|run-skill|registry|lock|tracker|record-fixture>.ts …`, `npm test`, `npm run check`, `npm run typecheck`. Test skill code with `node scripts/run-examples.ts work/<skill>`.";
+  "Blocked: interpreters and package managers (node, npx, tsx, ts-node, bun, deno, python, npm) run only as an allowed entry point from the repo root: `node scripts/<run-examples|run-skill|registry|lock|tracker|record-fixture|fix-skill>.ts …`, `npm test`, `npm run check`, `npm run typecheck`. Test skill code with `node scripts/run-examples.ts work/<skill>`.";
 const INLINE_CODE_REASON =
   "Blocked: inline code (`node -e/--eval/-p/--print/--input-type`, `python -c`) never runs on the host. Test skill code with `node scripts/run-examples.ts work/<skill>`.";
 const TEST_RUNNER_REASON =
@@ -216,6 +233,12 @@ const forms = (word: Word): string[] => [
   word.value.toLowerCase(),
   toPosixPath(word.raw.replace(QUOTES, "")).toLowerCase(),
 ];
+
+const touchesProtected = (text: string): boolean =>
+  PROTECTED.some((name) => text.includes(name)) || RUN_STATE.test(text);
+
+const mentionsSecret = (text: string): boolean =>
+  SECRET_FILE.test(text.replaceAll(SECRET_EXAMPLE, ""));
 
 const matchesAny = (words: readonly Word[], test: (text: string) => boolean) =>
   words.some((word) => forms(word).some(test));
@@ -357,7 +380,7 @@ export const isEntryPoint = (words: readonly string[]): boolean => {
   if (words[0] === "git") {
     return (
       READ_ONLY_GIT[words[1] ?? ""] === true &&
-      !words.some((word) => GIT_WRITE_FLAG.test(word))
+      !words.some((word) => GIT_UNTRUSTED_FLAG.test(word))
     );
   }
   if (words[0] === "node") {
@@ -449,12 +472,13 @@ const untrustedCommands = (
       entriesTrusted &&
       isEntryPoint(simple.words.map((word) => word.value))
     ) {
+      // `echo … | node scripts/run-skill.ts …`: the input would bypass the
+      // script's own argument checks.
+      if (simple.piped) {
+        return PIPED_ENTRY_REASON;
+      }
       // Their arguments are validated by the scripts; redirects are not.
-      if (
-        matchesAny(simple.redirects, (text) =>
-          PROTECTED.some((name) => text.includes(name))
-        )
-      ) {
+      if (matchesAny(simple.redirects, touchesProtected)) {
         return PROTECTED_REASON;
       }
     } else {
@@ -463,6 +487,15 @@ const untrustedCommands = (
   }
   return checked;
 };
+
+/** `ln`, `link`, `mklink` or PowerShell `New-Item -ItemType SymbolicLink`. */
+const createsLink = ({ words }: SimpleCommand): boolean =>
+  commandNames(words).some(
+    ({ name }) =>
+      name !== undefined && matchesAny([name], (text) => LINK_CLI.test(text))
+  ) ||
+  (NEW_ITEM[lower(words[0])] === true &&
+    matchesAny(words, (text) => LINK_ITEM_TYPE.test(text)));
 
 const startsContainer = (
   commands: readonly SimpleCommand[],
@@ -525,19 +558,23 @@ export const checkCommand = (
     ...simple.words,
     ...simple.redirects,
   ]);
-  const everyWord = [
-    ...allWords,
-    ...parsed.commands.flatMap((simple) => simple.words),
-  ];
+  // Trusted entry points included: their arguments must not name secrets.
+  const topWords = parsed.commands.flatMap((simple) => [
+    ...simple.words,
+    ...simple.redirects,
+  ]);
+  const everyWord = [...allWords, ...topWords];
   if (matchesAny(everyWord, (text) => CODE_LOADING_ENV.test(text))) {
     return CODE_LOADING_ENV_REASON;
   }
-  if (
-    matchesAny(allWords, (text) =>
-      PROTECTED.some((name) => text.includes(name))
-    )
-  ) {
+  if (matchesAny(everyWord, mentionsSecret)) {
+    return SECRET_REASON;
+  }
+  if (matchesAny(allWords, touchesProtected)) {
     return PROTECTED_REASON;
+  }
+  if (commands.some(createsLink)) {
+    return SYMLINK_REASON;
   }
   if (startsContainer(commands, allWords)) {
     return CONTAINER_REASON;
