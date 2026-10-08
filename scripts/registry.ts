@@ -1,12 +1,25 @@
-// Skill registry over `registry.json`. Versions are git tags `skill/<name>@vN`.
+// Skill registry CLI over `registry.json` (model: `lib/registry.ts`).
+// Versions are git tags `skill/<name>@vN`. Also `npm run skills -- <command>`.
 //
+//   node scripts/registry.ts list [--json]
+//   node scripts/registry.ts show <name> [--json]
 //   node scripts/registry.ts install <skill> [--issue <n>] [--network]
+//   node scripts/registry.ts disable <name>                  # operator only
+//   node scripts/registry.ts enable <name>                   # operator only
+//   node scripts/registry.ts rollback <name> [--to vN]       # operator only
+//   node scripts/registry.ts remove <name> [--delete-tags]   # operator only
+//
+// `list`/`show` print a table (one JSON line with `--json`). The operator
+// commands (`lib/operator.ts`) are denied to the agent by `guard-bash.ts`; a
+// human runs them in a terminal. They print one JSON line
+// `{ action, name, ok, … }` (exit 1 when `ok` is false).
 //
 // `install` is the only way into `.claude/skills/`. It requires the locked
 // examples (unchanged), an `approve` verdict in `work/<skill>/review.json`
 // captured for those locked examples (its `examplesHash` equals the lock), and
-// a fresh passing `run-examples`, then copies the skill, updates the registry,
-// commits, tags and pushes as the GitHub App bot. The issue defaults to
+// a fresh passing `run-examples`, then copies the skill, updates the registry
+// (appending an `install` history entry with the run's cost), commits, tags
+// and pushes as the GitHub App bot. The issue defaults to
 // `work/<skill>/issue.json` (written by `tracker.ts open`). Output is one JSON
 // line: `{ installed, version, commit }`, or `{ installed: false, reason }`
 // (exit 1).
@@ -15,96 +28,47 @@
 // commit, tag or push fails, install restores `.claude/skills/<skill>`,
 // `registry.json`, the index, HEAD and the tag as they were.
 
-import { execFile } from "node:child_process";
-import {
-  cpSync,
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
-import { parseArgs, promisify } from "node:util";
-import { botEnv, runAsBot } from "./github-app-token.ts";
-import { GITHUB_APP_ENV, loadDotEnv, requireEnvVars } from "./lib/env.ts";
+import { parseArgs } from "node:util";
+import { loadDotEnv } from "./lib/env.ts";
 import { isPlainObject, SKILL_NAME } from "./lib/examples.ts";
 import { readIssueRecord } from "./lib/issue.ts";
+import {
+  disableSkill,
+  enableSkill,
+  formatList,
+  formatShow,
+  listSkills,
+  type OperatorResult,
+  removeSkill,
+  rollbackSkill,
+  showSkill,
+} from "./lib/operator.ts";
+import {
+  applyChange,
+  type Change,
+  commitChange,
+  localVersionTags,
+  message,
+  pushChange,
+  type RegistryDeps,
+  type RegistryEntry,
+  readRegistry,
+  realDeps,
+  saveEntry,
+  skillPath,
+  skillTag,
+  versionNumber,
+} from "./lib/registry.ts";
 import { examplesPath, readLock, sha256File } from "./lock.ts";
-import type { Summary } from "./run-examples.ts";
 
-const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
-const VERSION = /^v([1-9]\d*)$/;
 const NOT_INSTALLED = new Set(["issue.json", "progress.md", "review.json"]);
-// Push with the bot token: `gh` serves `GH_TOKEN` as git credentials.
-const BOT_CREDENTIALS = [
-  "-c",
-  "credential.helper=",
-  "-c",
-  "credential.helper=!gh auth git-credential",
-];
-
-const execFileAsync = promisify(execFile);
-
-export interface RegistryEntry {
-  enabled: boolean;
-  examplesHash: string;
-  installedAt: string;
-  issue: number;
-  name: string;
-  network: boolean;
-  version: string;
-}
-
-export interface Registry {
-  skills: RegistryEntry[];
-}
-
-export const registryPath = (root: string): string =>
-  path.join(root, "registry.json");
-
-const isRegistryEntry = (value: unknown): value is RegistryEntry =>
-  isPlainObject(value) &&
-  typeof value.name === "string" &&
-  typeof value.version === "string" &&
-  typeof value.enabled === "boolean" &&
-  typeof value.network === "boolean" &&
-  typeof value.examplesHash === "string" &&
-  typeof value.installedAt === "string" &&
-  typeof value.issue === "number";
-
-export const readRegistry = (root: string): Registry => {
-  const data: unknown = JSON.parse(readFileSync(registryPath(root), "utf8"));
-  if (
-    !(
-      isPlainObject(data) &&
-      Array.isArray(data.skills) &&
-      data.skills.every(isRegistryEntry)
-    )
-  ) {
-    throw new Error("registry.json is malformed");
-  }
-  return { skills: data.skills };
-};
 
 export type InstallResult =
   | { commit: string; installed: string; version: string }
   | { installed: false; reason: string };
-
-export interface InstallDeps {
-  /** Runs a command with the GitHub App bot identity; resolves to stdout. */
-  bot: (cmd: string, args: readonly string[]) => Promise<string>;
-  /** Resolves the bot credentials; rejects with what is missing or wrong. */
-  credentials: () => Promise<void>;
-  /** Read-only git as the local user; resolves to stdout. */
-  git: (args: readonly string[]) => Promise<string>;
-  now: () => Date;
-  root: string;
-  /** Fresh `run-examples` summary for a skill directory. */
-  runExamples: (skillDir: string) => Promise<Summary>;
-}
 
 export interface InstallOptions {
   /** Defaults to `work/<skill>/issue.json`. */
@@ -163,99 +127,21 @@ const checkLock = (root: string, skill: string): string => {
 };
 
 const nextVersion = async (
-  deps: InstallDeps,
+  deps: RegistryDeps,
   skill: string,
   previous: RegistryEntry | undefined
 ): Promise<string> => {
   const prefix = `skill/${skill}@`;
-  const tags = await deps.git([
-    "-C",
-    deps.root,
-    "tag",
-    "--list",
-    `${prefix}v*`,
-  ]);
-  // The glob also matches e.g. `skill/<skill>@vfoo`; count exact `vN` only.
-  const numbers = tags
-    .split("\n")
-    .map((tag) => tag.trim())
-    .filter((tag) => tag.startsWith(prefix))
-    .map((tag) => Number(VERSION.exec(tag.slice(prefix.length))?.[1] ?? 0));
-  numbers.push(Number(VERSION.exec(previous?.version ?? "")?.[1] ?? 0));
+  const numbers = (await localVersionTags(deps, skill)).map((tag) =>
+    versionNumber(tag.slice(prefix.length))
+  );
+  numbers.push(versionNumber(previous?.version ?? ""));
   return `v${Math.max(...numbers) + 1}`;
-};
-
-const skillTarget = (root: string, skill: string): string =>
-  path.join(root, ".claude", "skills", skill);
-
-const message = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
-
-/** What install changes, recorded so a failure can restore it. */
-interface Undo {
-  /** Copy of the previously installed skill, inside a temp directory. */
-  backup?: string;
-  head: string;
-  /** `git add`/`commit` pathspec: the installed skill and the registry. */
-  paths: string[];
-  registry: string;
-  skill: string;
-  /** Set before `git add` touches the index. */
-  staged: boolean;
-  /** Set once the local tag exists. */
-  tag?: string;
-}
-
-const prepareUndo = async (deps: InstallDeps, skill: string): Promise<Undo> => {
-  const head = (await deps.git(["-C", deps.root, "rev-parse", "HEAD"])).trim();
-  const undo: Undo = {
-    head,
-    paths: ["--", `.claude/skills/${skill}`, "registry.json"],
-    registry: readFileSync(registryPath(deps.root), "utf8"),
-    skill,
-    staged: false,
-  };
-  const target = skillTarget(deps.root, skill);
-  if (existsSync(target)) {
-    undo.backup = path.join(
-      mkdtempSync(path.join(tmpdir(), "frankenstein-install-")),
-      skill
-    );
-    cpSync(target, undo.backup, { recursive: true });
-  }
-  return undo;
-};
-
-/** Files first (local, cannot need the network), then the git state. */
-const rollback = async (deps: InstallDeps, undo: Undo): Promise<void> => {
-  const target = skillTarget(deps.root, undo.skill);
-  rmSync(target, { force: true, recursive: true });
-  if (undo.backup !== undefined) {
-    cpSync(undo.backup, target, { recursive: true });
-  }
-  writeFileSync(registryPath(deps.root), undo.registry);
-  const repo = ["-C", deps.root];
-  if (undo.tag !== undefined) {
-    await deps.bot("git", [...repo, "tag", "-d", undo.tag]);
-  }
-  const head = (await deps.git([...repo, "rev-parse", "HEAD"])).trim();
-  if (head !== undo.head) {
-    await deps.bot("git", [...repo, "reset", "--soft", undo.head]);
-  }
-  if (undo.staged) {
-    await deps.bot("git", [
-      ...repo,
-      "reset",
-      "--quiet",
-      undo.head,
-      ...undo.paths,
-    ]);
-  }
 };
 
 const copySkill = (root: string, skill: string): void => {
   const source = path.join(root, "work", skill);
-  const target = skillTarget(root, skill);
+  const target = path.join(root, skillPath(skill));
   rmSync(target, { force: true, recursive: true });
   cpSync(source, target, {
     filter: (file) => !NOT_INSTALLED.has(path.relative(source, file)),
@@ -263,56 +149,28 @@ const copySkill = (root: string, skill: string): void => {
   });
 };
 
-const writeRegistry = (
-  root: string,
-  registry: Registry,
-  entry: RegistryEntry
-): void => {
-  const skills = registry.skills.filter((skill) => skill.name !== entry.name);
-  skills.push(entry);
-  skills.sort((a, b) => a.name.localeCompare(b.name));
-  writeFileSync(registryPath(root), `${JSON.stringify({ skills }, null, 2)}\n`);
-};
-
 const commitAndTag = async (
-  deps: InstallDeps,
+  deps: RegistryDeps,
   entry: RegistryEntry,
-  undo: Undo
+  change: Change
 ): Promise<string> => {
   const { name, version, issue } = entry;
-  const repo = ["-C", deps.root];
-  const { paths } = undo;
-  const tag = `skill/${name}@${version}`;
-  undo.staged = true;
-  await deps.bot("git", [...repo, "add", ...paths]);
-  await deps.bot("git", [
-    ...repo,
-    "commit",
-    "-m",
+  const tag = skillTag(name, version);
+  const commit = await commitChange(deps, change, [
     `feat(skills): install ${name} ${version}`,
-    "-m",
     `Refs #${issue}`,
-    ...paths,
   ]);
-  const commit = (await deps.git([...repo, "rev-parse", "HEAD"])).trim();
   await deps.bot("git", [
-    ...repo,
+    "-C",
+    deps.root,
     "tag",
     "-a",
     tag,
     "-m",
     `${name} ${version}`,
   ]);
-  undo.tag = tag;
-  await deps.bot("git", [
-    ...repo,
-    ...BOT_CREDENTIALS,
-    "push",
-    "--atomic",
-    "origin",
-    "HEAD",
-    `refs/tags/${tag}`,
-  ]);
+  change.tag = tag;
+  await pushChange(deps, [`refs/tags/${tag}`]);
   return commit;
 };
 
@@ -320,8 +178,8 @@ const commitAndTag = async (
 const checkInstallable = async (
   skill: string,
   options: InstallOptions,
-  deps: InstallDeps
-): Promise<{ entry: RegistryEntry; registry: Registry }> => {
+  deps: RegistryDeps
+): Promise<RegistryEntry> => {
   if (!SKILL_NAME.test(skill)) {
     throw new Error(`invalid skill name "${skill}"`);
   }
@@ -329,6 +187,14 @@ const checkInstallable = async (
   if (issue === undefined) {
     throw new Error(
       `no build issue: pass --issue <n> or open one with \`node scripts/tracker.ts open --skill ${skill}\``
+    );
+  }
+  const previous = readRegistry(deps.root).skills.find(
+    (item) => item.name === skill
+  );
+  if (previous?.enabled === false) {
+    throw new Error(
+      `skill "${skill}" is disabled; the operator must enable or remove it first`
     );
   }
   const examplesHash = checkLock(deps.root, skill);
@@ -340,111 +206,74 @@ const checkInstallable = async (
       `run-examples failed at ${summary.stage}: ${summary.reason}`
     );
   }
-  const registry = readRegistry(deps.root);
-  const previous = registry.skills.find((item) => item.name === skill);
-  const entry: RegistryEntry = {
+  return {
     enabled: true,
     examplesHash,
+    history: previous?.history ?? [],
     installedAt: deps.now().toISOString(),
     issue,
     name: skill,
     network: options.network,
     version: await nextVersion(deps, skill, previous),
   };
-  return { entry, registry };
 };
 
 export const install = async (
   skill: string,
   options: InstallOptions,
-  deps: InstallDeps
+  deps: RegistryDeps
 ): Promise<InstallResult> => {
-  let undo: Undo | undefined;
   try {
-    const { entry, registry } = await checkInstallable(skill, options, deps);
-    undo = await prepareUndo(deps, skill);
-    copySkill(deps.root, skill);
-    writeRegistry(deps.root, registry, entry);
-    const commit = await commitAndTag(deps, entry, undo);
+    const entry = await checkInstallable(skill, options, deps);
+    const commit = await applyChange(
+      deps,
+      [skillPath(skill)],
+      "installed",
+      async (change) => {
+        copySkill(deps.root, skill);
+        entry.history = [
+          ...entry.history,
+          {
+            action: "install",
+            at: entry.installedAt,
+            commit: change.head,
+            costUsd: deps.costUsd(),
+            issue: entry.issue,
+            version: entry.version,
+          },
+        ];
+        saveEntry(deps.root, readRegistry(deps.root), entry);
+        return await commitAndTag(deps, entry, change);
+      }
+    );
     return { commit, installed: skill, version: entry.version };
   } catch (error) {
-    if (undo === undefined) {
-      return { installed: false, reason: message(error) };
-    }
-    try {
-      await rollback(deps, undo);
-    } catch (rollbackError) {
-      return {
-        installed: false,
-        reason: `${message(error)}; rollback failed, check .claude/skills/${skill}, registry.json and git status: ${message(rollbackError)}`,
-      };
-    }
-    return {
-      installed: false,
-      reason: `${message(error)} (rolled back, nothing installed)`,
-    };
-  } finally {
-    if (undo?.backup !== undefined) {
-      rmSync(path.dirname(undo.backup), { force: true, recursive: true });
-    }
+    return { installed: false, reason: message(error) };
   }
 };
 
 // ---------------------------------------------------------------------------
 // CLI
 
-const runExamplesScript = async (skillDir: string): Promise<Summary> => {
-  const script = path.join(REPO_ROOT, "scripts", "run-examples.ts");
-  let stdout = "";
-  try {
-    ({ stdout } = await execFileAsync(process.execPath, [script, skillDir], {
-      encoding: "utf8",
-      windowsHide: true,
-    }));
-  } catch (error) {
-    // Exit 1 means FAIL; the summary line is still on stdout.
-    if (error instanceof Error && "stdout" in error) {
-      stdout = String(error.stdout);
-    }
-    if (stdout.trim() === "") {
-      throw error;
-    }
-  }
-  const lastLine = stdout.trim().split("\n").at(-1) ?? "";
-  return JSON.parse(lastLine) as Summary;
-};
+const USAGE = `usage: node scripts/registry.ts <command>
+  list [--json]
+  show <name> [--json]
+  install <skill> [--issue <n>] [--network]
+  disable <name>                   (operator)
+  enable <name>                    (operator)
+  rollback <name> [--to vN]        (operator)
+  remove <name> [--delete-tags]    (operator)
+`;
 
-const realDeps: InstallDeps = {
-  bot: (cmd, args) => runAsBot(cmd, args),
-  credentials: async () => {
-    requireEnvVars(GITHUB_APP_ENV);
-    await botEnv();
-  },
-  git: async (args) =>
-    (await execFileAsync("git", args, { encoding: "utf8", windowsHide: true }))
-      .stdout,
-  now: () => new Date(),
-  root: REPO_ROOT,
-  runExamples: runExamplesScript,
-};
+interface CliValues {
+  "delete-tags": boolean;
+  issue?: string;
+  json: boolean;
+  network: boolean;
+  to?: string;
+}
 
-const main = async (): Promise<void> => {
-  const { positionals, values } = parseArgs({
-    allowPositionals: true,
-    options: {
-      issue: { type: "string" },
-      network: { default: false, type: "boolean" },
-    },
-    strict: true,
-  });
-  const [command, skill] = positionals;
-  if (command !== "install" || skill === undefined) {
-    process.stderr.write(
-      "usage: node scripts/registry.ts install <skill> [--issue <n>] [--network]\n"
-    );
-    process.exitCode = 2;
-    return;
-  }
+const runInstall = async (skill: string, values: CliValues): Promise<void> => {
   let result: InstallResult;
   if (values.issue === undefined || POSITIVE_INTEGER.test(values.issue)) {
     loadDotEnv();
@@ -461,6 +290,94 @@ const main = async (): Promise<void> => {
   }
   process.stdout.write(`${JSON.stringify(result)}\n`);
   process.exitCode = result.installed === false ? 1 : 0;
+};
+
+const runOperator = async (
+  command: string,
+  name: string,
+  values: CliValues
+): Promise<OperatorResult> => {
+  loadDotEnv();
+  switch (command) {
+    case "disable":
+      return await disableSkill(name, realDeps);
+    case "enable":
+      return await enableSkill(name, realDeps);
+    case "rollback":
+      return await rollbackSkill(
+        name,
+        values.to === undefined ? {} : { to: values.to },
+        realDeps
+      );
+    default:
+      return await removeSkill(
+        name,
+        { deleteTags: values["delete-tags"] },
+        realDeps
+      );
+  }
+};
+
+const OPERATOR_COMMANDS: Record<string, true> = {
+  disable: true,
+  enable: true,
+  remove: true,
+  rollback: true,
+};
+
+const main = async (): Promise<void> => {
+  const { positionals, values } = parseArgs({
+    allowPositionals: true,
+    options: {
+      "delete-tags": { default: false, type: "boolean" },
+      issue: { type: "string" },
+      json: { default: false, type: "boolean" },
+      network: { default: false, type: "boolean" },
+      to: { type: "string" },
+    },
+    strict: true,
+  });
+  const [command = "", name] = positionals;
+  if (command === "list" && name === undefined) {
+    const skills = listSkills(realDeps.root);
+    process.stdout.write(
+      values.json
+        ? `${JSON.stringify({ skills })}\n`
+        : `${formatList(skills)}\n`
+    );
+    return;
+  }
+  if (name === undefined) {
+    process.stderr.write(USAGE);
+    process.exitCode = 2;
+    return;
+  }
+  if (command === "show") {
+    try {
+      const details = await showSkill(realDeps, name);
+      process.stdout.write(
+        values.json
+          ? `${JSON.stringify(details)}\n`
+          : `${formatShow(details)}\n`
+      );
+    } catch (error) {
+      process.stdout.write(`${JSON.stringify({ error: message(error) })}\n`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+  if (command === "install") {
+    await runInstall(name, values);
+    return;
+  }
+  if (OPERATOR_COMMANDS[command] !== true) {
+    process.stderr.write(USAGE);
+    process.exitCode = 2;
+    return;
+  }
+  const result = await runOperator(command, name, values);
+  process.stdout.write(`${JSON.stringify(result)}\n`);
+  process.exitCode = result.ok ? 0 : 1;
 };
 
 if (import.meta.main) {

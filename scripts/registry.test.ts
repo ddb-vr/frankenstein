@@ -14,8 +14,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { writeIssueRecord } from "./lib/issue.ts";
+import { type RegistryDeps, readRegistry } from "./lib/registry.ts";
 import { lockSkill, readLock } from "./lock.ts";
-import { type InstallDeps, install, readRegistry } from "./registry.ts";
+import { install } from "./registry.ts";
 import type { Summary } from "./run-examples.ts";
 
 const SKILL = "text-stats";
@@ -87,11 +88,12 @@ const approve = (
   );
 };
 
-const deps = (overrides: Partial<InstallDeps> = {}): InstallDeps => ({
+const deps = (overrides: Partial<RegistryDeps> = {}): RegistryDeps => ({
   bot: (_cmd, args) => {
     botCalls.push([...args]);
     return Promise.resolve("");
   },
+  costUsd: () => 0.9,
   credentials: () => Promise.resolve(),
   git: (args) =>
     Promise.resolve(
@@ -107,7 +109,7 @@ const deps = (overrides: Partial<InstallDeps> = {}): InstallDeps => ({
 
 const installFails = async (
   reason: RegExp,
-  overrides: Partial<InstallDeps> = {},
+  overrides: Partial<RegistryDeps> = {},
   skill = SKILL
 ): Promise<void> => {
   const result = await install(
@@ -223,6 +225,16 @@ test("installs: copies the skill, bumps the version, commits, tags and pushes as
     {
       enabled: true,
       examplesHash: lock.sha256,
+      history: [
+        {
+          action: "install",
+          at: "2026-10-08T12:00:00.000Z",
+          commit: COMMIT,
+          costUsd: 0.9,
+          issue: 7,
+          version: "v3",
+        },
+      ],
       installedAt: "2026-10-08T12:00:00.000Z",
       issue: 7,
       name: SKILL,
@@ -288,7 +300,7 @@ const installPrevious = (): string => {
 };
 
 /** HEAD is `PREVIOUS_HEAD` until the install commit, `COMMIT` after it. */
-const movingHeadGit = (): InstallDeps["git"] => {
+const movingHeadGit = (): RegistryDeps["git"] => {
   let revParses = 0;
   return (args) => {
     if (args.includes("tag")) {
@@ -300,7 +312,7 @@ const movingHeadGit = (): InstallDeps["git"] => {
 };
 
 const failingBot =
-  (...failing: string[]): InstallDeps["bot"] =>
+  (...failing: string[]): RegistryDeps["bot"] =>
   (_cmd, args) => {
     botCalls.push([...args]);
     const step = failing.find((name) => args.includes(name));

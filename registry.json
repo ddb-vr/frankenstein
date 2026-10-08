@@ -3,6 +3,16 @@
     {
       "enabled": true,
       "examplesHash": "5661a3ab20e5c518fde60be2e35ed520760234ad7f58687be7e8ea7fd7ffb346",
+      "history": [
+        {
+          "action": "install",
+          "at": "2026-10-08T21:48:09.822Z",
+          "commit": "67af319786c7e56942860630a5512152b7a8d59c",
+          "costUsd": null,
+          "issue": 7,
+          "version": "v1"
+        }
+      ],
       "installedAt": "2026-10-08T21:48:09.822Z",
       "issue": 7,
       "name": "ico-validator",

@@ -31,6 +31,8 @@ The ARES demo needs `FIXTURE_ALLOWED_DOMAINS=ares.gov.cz` (the `.env.example` de
 | `npm run typecheck`     | `tsc --noEmit`                                |
 | `npm test`              | Run `scripts/**/*.test.ts` with `node --test` |
 | `npm run sandbox:build` | Build the `frankenstein-sandbox` Docker image |
+| `npm run skills -- …`   | Skill registry: `scripts/registry.ts` (see [Operator control](#operator-control)) |
+| `npm run demo:reset`    | Remove every skill with its tags, clear `work/` and `logs/` |
 
 ## Skill test runner
 
@@ -65,6 +67,7 @@ only explain them.
 |----------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `examples.json` is locked once the user confirms the source of truth | `node scripts/lock.ts <skill>` writes `work/.locks/<skill>.json` (sha256 + timestamp); `guard-files.ts` denies edits while it exists                                                                                                                                                                          |
 | Nothing lands in `.claude/skills/` except through the install script | `Edit(/.claude/skills/**)` deny rule; `guard-files.ts` and `guard-bash.ts` deny writes and shell access                                                                                                                                                                                                       |
+| Only a human overrides the registry                                  | `guard-bash.ts` denies `registry.ts disable/enable/rollback/remove`, `npm run skills -- <those>` and the demo reset in any form; `Edit(/.claude/disabled-skills/**)` deny rule and `guard-files.ts` deny writes to disabled skills                                                                           |
 | Install only with passing tests and an approve verdict               | `node scripts/registry.ts install` checks lock hash, `review.json` (approve, and its `examplesHash` equals the lock) and a fresh `run-examples`; `review.json` is written only by `capture-review.ts` from the `skill-reviewer`'s single `verdict` block (SubagentStop, or the `SubagentHandback` report in auto mode); each new review supersedes the previous one; a missing, duplicated or invalid block gets one retry, then a `reject` (`no valid verdict block`) is recorded; history in `logs/<skill>/reviews.log` |
 | Generated code never executes on the host                            | `guard-bash.ts` allows interpreters and package managers (`node`, `npx`, `tsx`, `ts-node`, `bun`, `deno`, `python`, `npm`, …) only as an exact entry point from the repo root, not fed by a pipe, also inside chains, pipes, subshells, `bash -c`, substitutions and wrappers (`env`, `xargs`, `find -exec`); denies `node -e`/`--eval`/`-p`/`--input-type`, `node --test` outside `npm test`, code-loading env vars (`NODE_OPTIONS`, …), shells without `-c`, `cd` into and interpreters inside `work/`, `.claude/skills/`, `fixtures/skills/`, and docker/`--network` outside the sandbox scripts |
 | Builder iterations and USD spend per run are capped                  | `budget.ts` counts `skill-builder` calls and sums transcript usage (`MAX_BUILDER_ITERATIONS`, `BUDGET_USD_PER_RUN` in `.env`); over budget only a plain `tracker.ts` call and a Read of `work/<skill>/issue.json` pass |
@@ -86,12 +89,15 @@ from the repo root):
 node scripts/lock.ts <skill>                                  # after the user confirms examples.json
 node scripts/fix-skill.ts <skill>                             # Biome safe fixes + lint report for work/<skill>
 node scripts/registry.ts install <skill> [--issue <n>] [--network]
+node scripts/registry.ts list [--json]                        # installed skills (agent may run it)
+node scripts/registry.ts show <name> [--json]                 # history + version tags (agent may run it)
 node scripts/run-skill.ts <skill> '<json>'                    # run an installed, enabled skill
 node scripts/run-skill.ts <skill> --input-file <path>         # same, JSON input from a file (large inputs)
 ```
 
 - `install` copies `work/<skill>` (without `progress.md`, `review.json`, `issue.json`) to `.claude/skills/<skill>`,
-  bumps the version (`v1`, `v2`, …), updates `registry.json` and commits, tags `skill/<skill>@vN` and pushes as the bot.
+  bumps the version (`v1`, `v2`, …), updates `registry.json` (appending an `install` history entry with the cost of the
+  current Claude Code session, `null` when unknown) and commits, tags `skill/<skill>@vN` and pushes as the bot.
   The issue defaults to `work/<skill>/issue.json`, written by `tracker.ts open`. Prints
   `{ "installed", "version", "commit" }` or `{ "installed": false, "reason" }` (exit 1). The bot credentials
   (`GITHUB_APP_*` in `.env`) are checked and resolved before anything changes; a failed copy, commit, tag or push
@@ -141,6 +147,37 @@ cross-checks them with `logs/hooks.log` and the sandbox run logs started during 
   (or why the audit was unavailable).
 - Logs and hook decisions within 60 s of the session's first and last transcript line count as the session's; a
   concurrent session in the same repo blurs `sandboxRuns`.
+
+## Operator control
+
+A human inspects and overrides what the agent built, in a normal terminal (outside Claude Code, where the hooks do not
+apply). `/skills [<name>]` in Claude Code is the read-only view: it runs `list`/`show` and names the terminal command
+for any change.
+
+```sh
+npm run skills -- list [--json]                   # name, version, enabled, network, installed at, issue, total cost
+npm run skills -- show <name> [--json]            # history + every tag skill/<name>@vN (commit, date, author)
+npm run skills -- disable <name>                  # move to .claude/disabled-skills/, enabled: false
+npm run skills -- enable <name>                   # move back, enabled: true
+npm run skills -- rollback <name> [--to vN]       # restore from tag (default: previous tagged version)
+npm run skills -- remove <name> [--delete-tags]   # delete skill + entry; with tags locally and on origin
+npm run demo:reset [-- --yes]                     # remove --delete-tags for every skill; clear work/ and logs/
+```
+
+- Every `registry.json` entry carries `history`: `{ action, version, issue, costUsd, at, commit }` per `install`,
+  `disable`, `enable` and `rollback`. `commit` is the HEAD the action was applied to (the action's own commit is its
+  child and cannot name itself); entries from before `history` existed are migrated on read (`commit` and `costUsd`
+  `null`).
+- The changing commands need the bot credentials, commit as the bot (`chore(registry): <action> <name>`), push, and
+  print one JSON line `{ action, name, ok, commit, version }` or `{ action, name, ok: false, reason }` (exit 1). A
+  failure before the push restores the skill directories, `registry.json`, index and HEAD.
+- `disable` moves the directory because Claude Code discovers skills from `.claude/skills/` by itself; `run-skill.ts`
+  also refuses disabled skills, and `install` refuses a disabled skill until it is enabled or removed. A new Claude Code
+  session picks up the change.
+- `rollback` needs an enabled skill, restores `.claude/skills/<name>/` from `skill/<name>@vN` and aborts (restoring
+  everything) unless `run-examples` passes on it; all tags stay.
+- `demo:reset` asks for confirmation; a failed remove leaves `work/` and `logs/` untouched. GitHub issues are never
+  touched.
 
 ## Build flow
 

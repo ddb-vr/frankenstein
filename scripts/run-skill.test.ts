@@ -122,7 +122,20 @@ test("only installed, enabled skills run", () => {
       JSON.stringify({ skills: [{ ...entry, enabled }] })
     );
   registry(true);
-  assert.deepEqual(enabledEntry(dir, "csv-sum"), entry);
+  // Entries from before `history` existed are migrated on read.
+  assert.deepEqual(enabledEntry(dir, "csv-sum"), {
+    ...entry,
+    history: [
+      {
+        action: "install",
+        at: entry.installedAt,
+        commit: null,
+        costUsd: null,
+        issue: 7,
+        version: "v1",
+      },
+    ],
+  });
   assert.throws(() => enabledEntry(dir, "other"), NOT_INSTALLED);
   assert.throws(() => enabledEntry(dir, "../csv-sum"), INVALID_NAME);
   registry(false);
