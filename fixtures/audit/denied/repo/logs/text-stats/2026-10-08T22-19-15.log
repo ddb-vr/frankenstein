@@ -1,0 +1,60 @@
+skill: __ROOT__/fixtures/skills/text-stats
+started: 2026-10-08T22:19:15.655Z
+PASS validate (3 examples)
+=== unit tests
+sandbox: container=frk-d1a2cd2a4a92 exit=0 durationMs=2000
+docker argv: ["docker","run","--rm","-i","--name","frk-d1a2cd2a4a92","--network","none","--read-only","--tmpfs","/tmp","--cap-drop","ALL","--security-opt","no-new-privileges","--pids-limit","128","--cpus","1","--memory","512m","--user","node","-v","__ROOT__/fixtures/skills/text-stats:/skill:ro","-e","FRANKENSTEIN_MODE=test","frankenstein-sandbox","--test","--test-reporter=spec","/skill/tests/**/*.test.ts"]
+--- node --test (exit 0, 2000ms)
+stdout:
+✔ counts words separated by any whitespace (0.695375ms)
+✔ rejects missing text (0.217833ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 65.337333
+
+stderr:
+PASS unit tests (2000ms)
+sandbox: container=frk-ea02af556b9d exit=0 durationMs=158
+docker argv: ["docker","run","--rm","-i","--name","frk-ea02af556b9d","--network","none","--read-only","--tmpfs","/tmp","--cap-drop","ALL","--security-opt","no-new-privileges","--pids-limit","128","--cpus","1","--memory","512m","--user","node","-v","__ROOT__/fixtures/skills/text-stats:/skill:ro","-e","FRANKENSTEIN_MODE=test","frankenstein-sandbox","/skill/scripts/main.ts"]
+=== example: two words
+match: exact
+input: {"text":"hello world"}
+expected: {"words":2,"chars":11}
+actual: {"chars":11,"words":2}
+--- sandbox (exit 0, 158ms)
+stdout:
+{"chars":11,"words":2}
+
+stderr:
+PASS example "two words" (158ms)
+sandbox: container=frk-48fabac3f08f exit=0 durationMs=164
+docker argv: ["docker","run","--rm","-i","--name","frk-48fabac3f08f","--network","none","--read-only","--tmpfs","/tmp","--cap-drop","ALL","--security-opt","no-new-privileges","--pids-limit","128","--cpus","1","--memory","512m","--user","node","-v","__ROOT__/fixtures/skills/text-stats:/skill:ro","-e","FRANKENSTEIN_MODE=test","frankenstein-sandbox","/skill/scripts/main.ts"]
+=== example: empty text
+match: subset
+input: {"text":""}
+expected: {"words":0}
+actual: {"chars":0,"words":0}
+--- sandbox (exit 0, 164ms)
+stdout:
+{"chars":0,"words":0}
+
+stderr:
+PASS example "empty text" (164ms)
+sandbox: container=frk-a931a51b1ea2 exit=1 durationMs=154
+docker argv: ["docker","run","--rm","-i","--name","frk-a931a51b1ea2","--network","none","--read-only","--tmpfs","/tmp","--cap-drop","ALL","--security-opt","no-new-privileges","--pids-limit","128","--cpus","1","--memory","512m","--user","node","-v","__ROOT__/fixtures/skills/text-stats:/skill:ro","-e","FRANKENSTEIN_MODE=test","frankenstein-sandbox","/skill/scripts/main.ts"]
+=== example: missing text
+match: exact
+input: {}
+expected: {"error":true}
+actual: {"error":"text must be a string"}
+--- sandbox (exit 1, 154ms)
+stdout:
+{"error":"text must be a string"}
+
+stderr:
+PASS example "missing text" (154ms)

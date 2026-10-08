@@ -18,6 +18,7 @@ import { parseCommand, type SimpleCommand, type Word } from "./shell.ts";
 
 /** `node scripts/<file>`: arguments follow and are validated by the script. */
 const NODE_ENTRY_SCRIPTS: Record<string, true> = {
+  "scripts/audit-run.ts": true,
   "scripts/fix-skill.ts": true,
   "scripts/lock.ts": true,
   "scripts/record-fixture.ts": true,
@@ -208,7 +209,7 @@ const PIPED_ENTRY_REASON =
 const HOST_EXEC_REASON =
   "Blocked: skill code never runs on the host. Test it in the sandbox with `node scripts/run-examples.ts work/<skill>`; use an installed skill with `node scripts/run-skill.ts <skill> '<json>'` (or `--input-file <path>`).";
 const INTERPRETER_REASON =
-  "Blocked: interpreters and package managers (node, npx, tsx, ts-node, bun, deno, python, npm) run only as an allowed entry point from the repo root: `node scripts/<run-examples|run-skill|registry|lock|tracker|record-fixture|fix-skill>.ts …`, `npm test`, `npm run check`, `npm run typecheck`. Test skill code with `node scripts/run-examples.ts work/<skill>`.";
+  "Blocked: interpreters and package managers (node, npx, tsx, ts-node, bun, deno, python, npm) run only as an allowed entry point from the repo root: `node scripts/<run-examples|run-skill|registry|lock|tracker|record-fixture|fix-skill|audit-run>.ts …`, `npm test`, `npm run check`, `npm run typecheck`. Test skill code with `node scripts/run-examples.ts work/<skill>`.";
 const INLINE_CODE_REASON =
   "Blocked: inline code (`node -e/--eval/-p/--print/--input-type`, `python -c`) never runs on the host. Test skill code with `node scripts/run-examples.ts work/<skill>`.";
 const TEST_RUNNER_REASON =
@@ -285,7 +286,7 @@ interface Expanded {
 }
 
 /** Adds the commands nested in words, up to `MAX_NESTING` levels. */
-const expand = (commands: SimpleCommand[], depth = 0): Expanded => {
+export const expand = (commands: SimpleCommand[], depth = 0): Expanded => {
   const result: Expanded = { commands: [], tooDeep: false };
   for (const command of commands) {
     result.commands.push(command);
@@ -306,7 +307,7 @@ const expand = (commands: SimpleCommand[], depth = 0): Expanded => {
   return result;
 };
 
-interface CommandName {
+export interface CommandName {
   name: Word | undefined;
   /** xargs replace string the name must not contain. */
   placeholder?: string;
@@ -358,7 +359,7 @@ const commandName = (words: readonly Word[]): CommandName => {
 };
 
 /** Names this simple command runs: its own and those of `find -exec`. */
-const commandNames = (words: readonly Word[]): CommandName[] => {
+export const commandNames = (words: readonly Word[]): CommandName[] => {
   const names = [commandName(words)];
   for (const [index, word] of words.entries()) {
     if (FIND_EXEC[word.value] === true) {

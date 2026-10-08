@@ -318,6 +318,29 @@ const transcriptFiles = (state: RunState): string[] => {
   ];
 };
 
+/**
+ * Main and subagent transcripts of a session, located through its budget
+ * state (the state file is replaced atomically, so no lock is needed).
+ */
+export const sessionTranscripts = (
+  sessionId: string,
+  root: string = REPO_ROOT
+): string[] => {
+  let text: string;
+  try {
+    text = readFileSync(statePath(root, sessionId), "utf8");
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") {
+      throw new Error(
+        `no budget state for session ${sessionId} (work/.run/${sessionId}.json)`,
+        { cause: error }
+      );
+    }
+    throw error;
+  }
+  return transcriptFiles(JSON.parse(text) as RunState);
+};
+
 /** Adds usage from transcript lines appended since the last sync. */
 export const syncUsage = (state: RunState): void => {
   for (const file of transcriptFiles(state)) {

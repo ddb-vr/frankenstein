@@ -1,0 +1,8 @@
+2026-10-08T21:45:52.464Z	budget	allow	no objection	Write __ROOT__/work/ico-validator/scripts/main.ts
+2026-10-08T21:45:52.479Z	guard-files	allow	no objection	Write __ROOT__/work/ico-validator/scripts/main.ts
+2026-10-08T21:45:59.678Z	budget	allow	no objection	node scripts/run-examples.ts work/ico-validator
+2026-10-08T21:45:59.693Z	guard-bash	allow	no objection	node scripts/run-examples.ts work/ico-validator
+2026-10-08T21:46:04.020Z	budget	allow	no objection	true && node work/ico-validator/scripts/main.ts < /dev/null
+2026-10-08T21:46:04.035Z	guard-bash	allow	no objection	true && node work/ico-validator/scripts/main.ts < /dev/null
+2026-10-08T21:46:06.020Z	budget	allow	no objection	cd __ROOT__/work/ico-validator && node --test tests/
+2026-10-08T21:46:06.035Z	guard-bash	allow	no objection	cd __ROOT__/work/ico-validator && node --test tests/
