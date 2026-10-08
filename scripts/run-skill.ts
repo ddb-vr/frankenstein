@@ -17,7 +17,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { SKILL_NAME } from "./lib/examples.ts";
 import { readRegistry } from "./registry.ts";
-import { runInSandbox, SKILL_MOUNT } from "./sandbox.ts";
+import { runInSandbox, type SandboxResult, SKILL_MOUNT } from "./sandbox.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const ENTRY = "scripts/main.ts";
@@ -111,17 +111,30 @@ const run = async ({ name, input }: Invocation): Promise<number> => {
   if (!entry.enabled) {
     throw new Error(`skill "${name}" is disabled`);
   }
-  const result = await runInSandbox({
-    command: [`${SKILL_MOUNT}/${ENTRY}`],
-    network: entry.network,
-    skillDir: path.join(REPO_ROOT, ".claude", "skills", name),
-    stdin: JSON.stringify(input),
-    testMode: false,
-  });
-  const log = writeLog(name, [
+  const header = [
     `skill: ${name} ${entry.version}`,
     `network: ${entry.network}`,
     `input: ${JSON.stringify(input)}`,
+  ];
+  const runRecords: string[] = [];
+  let result: SandboxResult;
+  try {
+    result = await runInSandbox({
+      command: [`${SKILL_MOUNT}/${ENTRY}`],
+      network: entry.network,
+      onRunLog: (record) => runRecords.push(record),
+      skillDir: path.join(REPO_ROOT, ".claude", "skills", name),
+      stdin: JSON.stringify(input),
+      testMode: false,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const log = writeLog(name, [...header, ...runRecords, `error: ${message}`]);
+    throw new Error(`${message} (log: ${log})`, { cause: error });
+  }
+  const log = writeLog(name, [
+    ...header,
+    ...runRecords,
     `exit: ${result.exitCode}, ${result.durationMs}ms${result.timedOut ? ", TIMED OUT" : ""}`,
     "stdout:",
     result.stdout,

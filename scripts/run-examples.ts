@@ -151,6 +151,7 @@ const runUnitTests = async (
       "--test-reporter=spec",
       `${SKILL_MOUNT}/tests/**/*.test.ts`,
     ],
+    onRunLog: log.detail,
     skillDir,
     timeoutMs: UNIT_TIMEOUT_MS,
   });
@@ -215,6 +216,7 @@ const run = async (skillDir: string, log: Logger): Promise<Summary> => {
     // biome-ignore lint/performance/noAwaitInLoops: sequential keeps the live log ordered and bounds sandbox load.
     const result = await runInSandbox({
       command: [`${SKILL_MOUNT}/${entry}`],
+      onRunLog: log.detail,
       skillDir,
       stdin: JSON.stringify(example.input),
     });

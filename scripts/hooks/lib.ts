@@ -29,16 +29,29 @@
 //   report via the `SubagentHandback` tool (`tool_input.message`) instead,
 //   and `last_assistant_message` is only its closing text.
 
-import { readFileSync, writeSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeSync } from "node:fs";
 import path from "node:path";
 import { isPlainObject } from "../lib/examples.ts";
 
 /** Repository guarded by these hooks (the one this file lives in). */
 export const REPO_ROOT = path.resolve(import.meta.dirname, "..", "..");
 
+/** Overrides `logs/hooks.log` (tests point it at a temp file). */
+export const HOOK_LOG_ENV = "FRANKENSTEIN_HOOK_LOG";
+
 const DENY_EXIT_CODE = 2;
 const WINDOWS_DRIVE_PATH = /^[A-Za-z]:\//;
 const TRAILING_SLASHES = /\/+$/;
+const MAX_LOGGED_SUBJECT = 200;
+const MAX_LOGGED_REASON = 160;
+const BLOCKED_PREFIX = /^Blocked:\s*/;
+const FIRST_SENTENCE = /^.*?\.(?=\s|$)/s;
+const LOG_CONTROL_CHARS = /[\t\r\n]/g;
+const LOG_ESCAPES: Record<string, string> = {
+  "\n": "\\n",
+  "\r": "\\r",
+  "\t": "\\t",
+};
 
 export interface HookInput {
   agent_id?: string;
@@ -103,27 +116,100 @@ export const deny = (reason: string): never => {
 /** No opinion: the normal permission flow applies. */
 export const allow = (): never => process.exit(0);
 
+// ---------------------------------------------------------------------------
+// Decision log: one line per hook decision in logs/hooks.log.
+
+export interface LogEntry {
+  decision: "allow" | "block" | "deny";
+  hook: string;
+  /** Full reason; shortened to its first sentence when logged. */
+  reason: string;
+  /** Shell command, file path or tool name the decision is about. */
+  subject: string;
+}
+
+const truncate = (text: string, max: number): string =>
+  text.length > max ? `${text.slice(0, max - 1)}…` : text;
+
+/** `reason` without the `Blocked: ` prefix, cut after its first sentence. */
+export const shortReason = (reason: string): string => {
+  const text = reason.replace(BLOCKED_PREFIX, "");
+  return truncate(FIRST_SENTENCE.exec(text)?.[0] ?? text, MAX_LOGGED_REASON);
+};
+
+/** What a tool call is about: its command, else tool name and file path. */
+export const decisionSubject = (
+  toolName: string,
+  toolInput: Record<string, unknown>
+): string => {
+  const { command, file_path: filePath } = toolInput;
+  if (typeof command === "string") {
+    return command;
+  }
+  return typeof filePath === "string" ? `${toolName} ${filePath}` : toolName;
+};
+
+/** Tab-separated: time, hook, decision, short reason, subject (≤200 chars). */
+export const formatLogLine = (entry: LogEntry, time: Date): string =>
+  [
+    time.toISOString(),
+    entry.hook,
+    entry.decision,
+    shortReason(entry.reason),
+    truncate(entry.subject, MAX_LOGGED_SUBJECT),
+  ]
+    .map((field) =>
+      field.replace(LOG_CONTROL_CHARS, (char) => LOG_ESCAPES[char] ?? char)
+    )
+    .join("\t");
+
+/** Appends one decision line; a broken log never changes the decision. */
+export const logDecision = (entry: LogEntry): void => {
+  const file =
+    process.env[HOOK_LOG_ENV] || path.join(REPO_ROOT, "logs", "hooks.log");
+  try {
+    mkdirSync(path.dirname(file), { recursive: true });
+    appendFileSync(file, `${formatLogLine(entry, new Date())}\n`);
+  } catch (error) {
+    writeSync(
+      2,
+      `${entry.hook}: cannot write ${file}: ${error instanceof Error ? error.message : String(error)}\n`
+    );
+  }
+};
+
 /**
- * Runs a hook: reads stdin, applies `decide`, emits the decision. Any error
- * denies the call (fail closed) instead of letting the tool run unchecked.
+ * Runs a hook: reads stdin, applies `decide`, logs and emits the decision.
+ * Any error denies the call (fail closed) instead of letting the tool run
+ * unchecked.
  */
 export const runHook = (decide: (input: HookInput) => Decision): void => {
-  const name = path.basename(process.argv[1] ?? "hook");
+  const script = process.argv[1] ?? "hook";
+  const name = path.basename(script);
+  let subject = "(unreadable hook input)";
+  const finish = (reason: Decision): never => {
+    logDecision({
+      decision: reason === undefined ? "allow" : "deny",
+      hook: path.basename(script, path.extname(script)),
+      reason: reason ?? "no objection",
+      subject,
+    });
+    return reason === undefined ? allow() : deny(reason);
+  };
   const failClosed = (error: unknown): never =>
-    deny(
+    finish(
       `Blocked: hook ${name} failed (${error instanceof Error ? error.message : String(error)}). Do not work around it; report this to the user.`
     );
   process.on("uncaughtException", failClosed);
-  let reason: Decision;
+  let decision: Decision;
   try {
-    reason = decide(readHookInput());
+    const input = readHookInput();
+    subject = decisionSubject(input.tool_name, input.tool_input);
+    decision = decide(input);
   } catch (error) {
     failClosed(error);
   }
-  if (reason === undefined) {
-    allow();
-  }
-  deny(reason ?? "");
+  finish(decision);
 };
 
 // ---------------------------------------------------------------------------

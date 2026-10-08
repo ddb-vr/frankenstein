@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { type CaptureOutcome, captureReview } from "./capture-review.ts";
+import { HOOK_LOG_ENV } from "./lib.ts";
 import { runHookProcess } from "./testing.ts";
 
 const SKILL = "ico-check";
@@ -157,7 +158,8 @@ test("a hand-back report is recorded and that reviewer's closing stop is ignored
   assert.deepEqual(closingStop("a4"), { kind: "ignored" });
 });
 
-test("hook process blocks a malformed stop and ignores other agents", async () => {
+test("hook process blocks a malformed stop, ignores other agents and logs each decision", async () => {
+  const log = path.join(root, "hooks.log");
   const run = (input: Record<string, unknown>) =>
     runHookProcess(
       "capture-review.ts",
@@ -169,7 +171,8 @@ test("hook process blocks a malformed stop and ignores other agents", async () =
         stop_hook_active: false,
         transcript_path: "/tmp/x.jsonl",
         ...input,
-      })
+      }),
+      { [HOOK_LOG_ENV]: log }
     );
   const blocked = await run({
     agent_type: "skill-reviewer",
@@ -192,4 +195,17 @@ test("hook process blocks a malformed stop and ignores other agents", async () =
   });
   assert.equal(denied.exitCode, 0);
   assert.match(denied.reason ?? "", NOT_RECORDED);
+
+  const logged = readFileSync(log, "utf8")
+    .trimEnd()
+    .split("\n")
+    .map((line) => line.split("\t"));
+  assert.deepEqual(
+    logged.map(([, hook, decision, , subject]) => [hook, decision, subject]),
+    [
+      ["capture-review", "block", "SubagentStop skill-reviewer"],
+      ["capture-review", "allow", "SubagentStop prd"],
+      ["capture-review", "deny", "SubagentHandback skill-reviewer"],
+    ]
+  );
 });

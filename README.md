@@ -36,7 +36,8 @@ node scripts/run-examples.ts <skillDir>   # e.g. fixtures/skills/text-stats
 Validates `examples.json`, runs `tests/**/*.test.ts` and every example inside the sandbox (`scripts/sandbox.ts`: no
 network, read-only root and mount, no host env). Prints one JSON summary line (exit 0 on PASS, 1 on FAIL). Full output
 goes to `logs/<skill>/<timestamp>.log`; follow a run live with `tail -f logs/<skill>/latest.log` (Windows:
-`Get-Content -Wait`).
+`Get-Content -Wait`). Every sandbox run in a log starts with `sandbox: container=frk-… exit=… durationMs=…` and the
+exact `docker argv` (env values redacted), so the log proves where the code ran.
 
 Skill contract:
 
@@ -57,14 +58,16 @@ only explain them.
 | `examples.json` is locked once the user confirms the source of truth | `node scripts/lock.ts <skill>` writes `work/.locks/<skill>.json` (sha256 + timestamp); `guard-files.ts` denies edits while it exists                                                                                                                                                                          |
 | Nothing lands in `.claude/skills/` except through the install script | `Edit(/.claude/skills/**)` deny rule; `guard-files.ts` and `guard-bash.ts` deny writes and shell access                                                                                                                                                                                                       |
 | Install only with passing tests and an approve verdict               | `node scripts/registry.ts install` checks lock hash, `review.json` and a fresh `run-examples`; `review.json` is written only by `capture-review.ts` from the `skill-reviewer`'s final `verdict` block (SubagentStop, or the `SubagentHandback` report in auto mode), max 2 review rounds, an approve is final |
-| Generated code never executes on the host                            | `guard-bash.ts` denies runtimes (`node`, `npx`, `tsx`, `deno`, `bun`, `python`, …) on `work/`, `.claude/skills/`, `fixtures/skills/` and docker/`--network` outside the sandbox scripts                                                                                                                       |
+| Generated code never executes on the host                            | `guard-bash.ts` allows interpreters and package managers (`node`, `npx`, `tsx`, `ts-node`, `bun`, `deno`, `python`, `npm`, …) only as an exact entry point from the repo root, also inside chains, pipes, subshells, `bash -c`, substitutions and wrappers (`env`, `xargs`, `find -exec`); denies `node -e`/`--eval`/`-p`/`--input-type`, `node --test` outside `npm test`, code-loading env vars (`NODE_OPTIONS`, …), shells without `-c`, `cd` into and interpreters inside `work/`, `.claude/skills/`, `fixtures/skills/`, and docker/`--network` outside the sandbox scripts |
 | Builder iterations and USD spend per run are capped                  | `budget.ts` counts `skill-builder` calls and sums transcript usage (`MAX_BUILDER_ITERATIONS`, `BUDGET_USD_PER_RUN` in `.env`)                                                                                                                                                                                 |
 
 Hooks fail closed: a PreToolUse hook error denies the tool call; a `capture-review.ts` error records no verdict, so
-install keeps refusing. `guard-files.ts` also protects `scripts/`, `registry.json`, the Claude settings files and
-`work/<skill>/review.json`. Shell entry points that always pass (exactly, from the repo root):
-`node scripts/{run-examples,run-skill,registry,lock,tracker,record-fixture}.ts`, `npm test`, `npm run check`,
-`npm run typecheck` and read-only `git` (`status`, `log`, `diff`, `show`, …).
+install keeps refusing. Every hook decision is appended to `logs/hooks.log` (tab-separated: time, hook,
+`allow`/`deny`/`block`, short reason, command or file truncated to 200 chars). `guard-files.ts` also protects
+`scripts/`, `registry.json`, the Claude settings files and `work/<skill>/review.json`. Shell entry points that always
+pass (exactly, from the repo root): `node scripts/{run-examples,run-skill,registry,lock,tracker,record-fixture}.ts …`,
+`npm test`, `npm run check`, `npm run typecheck`, `npm run sandbox:build` (npm ones without extra arguments) and
+read-only `git` (`status`, `log`, `diff`, `show`, …).
 
 ```sh
 node scripts/lock.ts <skill>                                  # after the user confirms examples.json
@@ -88,8 +91,9 @@ Known limitations:
 
 - The verdict in `review.json` is still LLM output: the hook records whatever a `skill-reviewer` subagent ends with, and
   the main agent chooses the reviewer's prompt.
-- `guard-bash.ts` is a heuristic second layer (quotes, chains, `sh -c`, substitutions are handled; arbitrary obfuscation
-  is not). Entry points are trusted only without `cd`, substitutions or protected redirect targets.
+- `guard-bash.ts` is a heuristic second layer (quotes, chains, `sh -c`, substitutions, wrappers and dynamic command
+  names are handled; code smuggled in as data for a non-interpreter tool is not). Entry points are trusted only
+  without `cd`, substitutions or protected redirect targets.
 - Spend only counts models priced in `scripts/lib/pricing.ts`; usage from any other model makes the budget hook deny
   every call (fail closed). 1-hour cache writes are priced at the 5-minute rate.
 - Claude Code writes transcripts asynchronously, so spend lags by the messages not yet flushed (typically the current

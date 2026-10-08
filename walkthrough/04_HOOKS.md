@@ -41,13 +41,17 @@ Before writing code, check the current Claude Code hooks docs and confirm: hook 
 PreToolUse, matcher `Bash`. Deny when the command:
 
 - references `examples.json`, `review.json`, `work/.locks`, `.claude/skills`, `.claude/settings.json` or `registry.json` (except the allowed scripts below),
-- executes code from `work/` or `.claude/skills/` on the host (`node`, `npx`, `tsx`, `deno`, `bun`, `python` followed by such a path),
+- invokes an interpreter or package manager (`node`, `npx`, `tsx`, `ts-node`, `bun`, `deno`, `python`, `npm`, …) that is not exactly an allowed entry point – also inside `&&`, `;`, `|`, subshells, `$(…)`, `bash -c`/`sh -c` and wrappers (`env`, `xargs`, `find -exec`, `timeout`, …),
+- uses inline code (`node -e/--eval/-p/--print/--input-type`, `python -c`) or `node --test` outside `npm test`,
+- sets code-loading variables (`NODE_OPTIONS`, `NODE_PATH`, `PYTHONPATH`, `LD_PRELOAD`, `DYLD_*`, `BASH_ENV`, `npm_config_*`),
+- builds the command name dynamically (`$X`, globs, xargs/find placeholders) or feeds a shell without `-c` (script file, stdin, `source`),
+- `cd`s into `work/`, `.claude/skills/` or `fixtures/skills/`, or runs an interpreter while the hook input's `cwd` is inside them,
 - contains `--network` or `docker run` (only our sandbox script may start containers).
 
-Allowed entry points (match exactly at the start of the command):
-`node scripts/run-examples.ts`, `node scripts/run-skill.ts`, `node scripts/registry.ts`, `node scripts/lock.ts`, `node scripts/tracker.ts`, `node scripts/record-fixture.ts`, `npm test`, `npm run check`, `npm run typecheck`, read-only `git` commands.
+Allowed entry points (exact command, from the repo root):
+`node scripts/run-examples.ts …`, `node scripts/run-skill.ts …`, `node scripts/registry.ts …`, `node scripts/lock.ts …`, `node scripts/tracker.ts …`, `node scripts/record-fixture.ts …`, and without extra arguments `npm test`, `npm run check`, `npm run typecheck`, `npm run sandbox:build`; read-only `git` commands.
 
-Piping into an allowed entry point (`echo … | node scripts/run-skill.ts …`) does not start with it and is therefore denied. That is why skill input is passed as an argument or a file, never via stdin.
+Every decision of every hook is appended to `logs/hooks.log` (time, hook, decision, short reason, command truncated to 200 chars).
 
 This is a heuristic second layer; keep the rules simple and well tested.
 

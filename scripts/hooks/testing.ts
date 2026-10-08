@@ -1,8 +1,14 @@
 // Test helpers: recorded-shape PreToolUse inputs and hook process runs.
 
 import { execFile } from "node:child_process";
+import { devNull } from "node:os";
 import path from "node:path";
-import { type HookInput, parseHookInput, REPO_ROOT } from "./lib.ts";
+import {
+  HOOK_LOG_ENV,
+  type HookInput,
+  parseHookInput,
+  REPO_ROOT,
+} from "./lib.ts";
 
 /** Raw PreToolUse stdin payload, shaped like Claude Code 2.1.x sends it. */
 export const recordedInput = (
@@ -42,7 +48,10 @@ export interface HookRun {
   stdout: string;
 }
 
-/** Runs `scripts/hooks/<file>` as Claude Code would, feeding `stdin`. */
+/**
+ * Runs `scripts/hooks/<file>` as Claude Code would, feeding `stdin`. The
+ * decision log goes to the null device unless `env` names a log file.
+ */
 export const runHookProcess = (
   file: string,
   stdin: string,
@@ -52,7 +61,10 @@ export const runHookProcess = (
   const child = execFile(
     process.execPath,
     [path.join(import.meta.dirname, file)],
-    { encoding: "utf8", env: { ...process.env, ...env } },
+    {
+      encoding: "utf8",
+      env: { ...process.env, [HOOK_LOG_ENV]: devNull, ...env },
+    },
     (_error, stdout, stderr) => {
       const reason =
         stdout.trim() === ""

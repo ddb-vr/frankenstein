@@ -1,6 +1,6 @@
 // Minimal shell tokenizer for hook heuristics (Bash and simple PowerShell).
 // Splits a command line into simple commands on unquoted `;`, `&`, `&&`, `|`,
-// `||`, parentheses and newlines, removes quotes, separates redirect targets
+// `||`, parentheses, backticks and newlines, removes quotes, separates redirect targets
 // and flags command/process substitution. Not a full shell parser: callers
 // treat it as a second layer behind permissions and file guards.
 
@@ -146,7 +146,17 @@ export const parseCommand = (source: string): ParsedCommand => {
     if (afterQuote !== undefined) {
       return afterQuote;
     }
-    if (char === "`" || (char === "$" && next === "(")) {
+    if (char === "`") {
+      // Its content is a command of its own, like `$( … )`. The backtick
+      // stays a word so a substitution in command position is visible.
+      substitution = true;
+      endWord(index);
+      beginWord(index);
+      word.value += char;
+      endCommand(index + 1);
+      return index + 1;
+    }
+    if (char === "$" && next === "(") {
       substitution = true;
     } else if (BLANK.test(char)) {
       endWord(index);

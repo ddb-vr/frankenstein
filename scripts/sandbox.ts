@@ -12,6 +12,8 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const DOCKER_FAILURE_EXIT_CODES: readonly number[] = [125, 126, 127];
+// Env values may hold secrets; only this one is logged verbatim.
+const LOGGED_ENV = "FRANKENSTEIN_MODE=test";
 
 export interface SandboxOptions {
   /** Arguments to the image ENTRYPOINT (`node`). */
@@ -20,6 +22,11 @@ export interface SandboxOptions {
   env?: Record<string, string>;
   /** Allow network access. Default `false` (`--network none`). */
   network?: boolean;
+  /**
+   * Receives one record per run, also when docker fails: container name,
+   * docker argv (env values redacted), exit code and duration.
+   */
+  onRunLog?: (record: string) => void;
   skillDir: string;
   stdin?: string;
   /**
@@ -90,6 +97,32 @@ const killContainer = (containerName: string, onDone: () => void): void => {
   execFile("docker", ["kill", containerName], { windowsHide: true }, onDone);
 };
 
+/** Docker argv for logs: `-e KEY=value` before the image keeps only KEY. */
+export const redactDockerArgs = (args: readonly string[]): string[] => {
+  const imageIndex = args.indexOf(SANDBOX_IMAGE);
+  return args.map((arg, index) =>
+    index < imageIndex && args[index - 1] === "-e" && arg !== LOGGED_ENV
+      ? `${arg.slice(0, arg.indexOf("=") + 1)}<redacted>`
+      : arg
+  );
+};
+
+export interface RunRecord {
+  args: readonly string[];
+  containerName: string;
+  durationMs: number;
+  /** `undefined` when docker could not be started. */
+  exitCode: number | undefined;
+  timedOut: boolean;
+}
+
+/** Two log lines proving a sandbox run: what was started and how it ended. */
+export const formatRunRecord = (record: RunRecord): string =>
+  [
+    `sandbox: container=${record.containerName} exit=${record.exitCode ?? "none"} durationMs=${record.durationMs}${record.timedOut ? " TIMED OUT" : ""}`,
+    `docker argv: ${JSON.stringify(["docker", ...redactDockerArgs(record.args)])}`,
+  ].join("\n");
+
 export const runInSandbox = (
   options: SandboxOptions
 ): Promise<SandboxResult> => {
@@ -106,15 +139,19 @@ export const runInSandbox = (
     { encoding: "utf8", maxBuffer: MAX_OUTPUT_BYTES, windowsHide: true },
     (error, stdout, stderr) => {
       clearTimeout(timer);
+      const durationMs = Math.round(performance.now() - startedAt);
       const code = error && "code" in error ? error.code : undefined;
-      if (code === "ENOENT") {
+      const exitCode = code === "ENOENT" ? undefined : (child.exitCode ?? -1);
+      options.onRunLog?.(
+        formatRunRecord({ args, containerName, durationMs, exitCode, timedOut })
+      );
+      if (exitCode === undefined) {
         reject(new Error("docker CLI not found on PATH"));
         return;
       }
       if (code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
         killContainer(containerName, () => undefined);
       }
-      const exitCode = child.exitCode ?? -1;
       // 125: docker itself failed (daemon down, image missing); 126/127: command
       // could not be invoked. Docker CLI errors never write stdout, so a skill
       // exiting with these codes but printing output is still its own result.
@@ -128,13 +165,7 @@ export const runInSandbox = (
         );
         return;
       }
-      resolve({
-        durationMs: Math.round(performance.now() - startedAt),
-        exitCode,
-        stderr,
-        stdout,
-        timedOut,
-      });
+      resolve({ durationMs, exitCode, stderr, stdout, timedOut });
     }
   );
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
-import { buildDockerArgs, SANDBOX_IMAGE } from "./sandbox.ts";
+import { buildDockerArgs, formatRunRecord, SANDBOX_IMAGE } from "./sandbox.ts";
 
 const base = {
   command: ["/skill/x.ts"],
@@ -98,4 +98,44 @@ test("hardening flags, container name and command placement", () => {
   }
   assert.deepEqual(flagValues(args, "--user"), ["node"]);
   assert.deepEqual(args.slice(-3), [SANDBOX_IMAGE, "--test", "/skill/t/"]);
+});
+
+test("the run record names the container and redacts env values", () => {
+  const args = buildDockerArgs(
+    {
+      ...base,
+      command: ["-e", "/skill/x.ts"],
+      env: { API_TOKEN: "s3cret=value" },
+    },
+    "frk-abc"
+  );
+  const record = formatRunRecord({
+    args,
+    containerName: "frk-abc",
+    durationMs: 812,
+    exitCode: 3,
+    timedOut: false,
+  });
+  const [status = "", argv = ""] = record.split("\n");
+  assert.equal(status, "sandbox: container=frk-abc exit=3 durationMs=812");
+  assert.ok(!record.includes("s3cret"));
+  const logged: string[] = JSON.parse(argv.replace("docker argv: ", ""));
+  assert.deepEqual(
+    flagValues(logged.slice(0, logged.indexOf(SANDBOX_IMAGE)), "-e"),
+    ["FRANKENSTEIN_MODE=test", "API_TOKEN=<redacted>"]
+  );
+  // Only env flags before the image are redacted; the command is kept.
+  assert.deepEqual(logged.slice(0, 2), ["docker", "run"]);
+  assert.deepEqual(logged.slice(-3), [SANDBOX_IMAGE, "-e", "/skill/x.ts"]);
+  const [timedOutStatus] = formatRunRecord({
+    args,
+    containerName: "frk-abc",
+    durationMs: 5,
+    exitCode: undefined,
+    timedOut: true,
+  }).split("\n");
+  assert.equal(
+    timedOutStatus,
+    "sandbox: container=frk-abc exit=none durationMs=5 TIMED OUT"
+  );
 });

@@ -26,7 +26,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { isPlainObject, SKILL_NAME } from "../lib/examples.ts";
-import { REPO_ROOT } from "./lib.ts";
+import { type LogEntry, logDecision, REPO_ROOT } from "./lib.ts";
 
 export const REVIEWER_AGENT = "skill-reviewer";
 export const MAX_REVIEW_ROUNDS = 2;
@@ -273,19 +273,54 @@ const outputFor = (
   }
 };
 
+const logEntryFor = (
+  outcome: CaptureOutcome,
+  input: CaptureInput
+): LogEntry => {
+  const event = input.source === "stop" ? "SubagentStop" : HANDBACK_TOOL;
+  const entry = {
+    hook: "capture-review",
+    subject: `${event} ${input.agentType || "(no agent type)"}`,
+  };
+  switch (outcome.kind) {
+    case "ignored":
+      return { ...entry, decision: "allow", reason: "not a reviewer report." };
+    case "retry":
+      return {
+        ...entry,
+        decision: input.source === "stop" ? "block" : "deny",
+        reason: outcome.reason,
+      };
+    case "skipped":
+      return { ...entry, decision: "allow", reason: outcome.message };
+    default: {
+      const { round, skill, verdict } = outcome.review;
+      return {
+        ...entry,
+        decision: "allow",
+        reason: `recorded ${skill} ${verdict} (round ${round}).`,
+      };
+    }
+  }
+};
+
 if (import.meta.main) {
   let output: Record<string, unknown> | undefined;
   try {
     const input = parseCaptureInput(readFileSync(0, "utf8"));
-    output = outputFor(
-      captureReview(input, REPO_ROOT, new Date()),
-      input.source
-    );
+    const outcome = captureReview(input, REPO_ROOT, new Date());
+    logDecision(logEntryFor(outcome, input));
+    output = outputFor(outcome, input.source);
   } catch (error) {
     // Nothing was written, so install keeps refusing (fails closed).
-    output = {
-      systemMessage: `capture-review failed, no verdict recorded: ${error instanceof Error ? error.message : String(error)}`,
-    };
+    const message = `capture-review failed, no verdict recorded: ${error instanceof Error ? error.message : String(error)}`;
+    logDecision({
+      decision: "allow",
+      hook: "capture-review",
+      reason: `${message}.`,
+      subject: "(unreadable hook input)",
+    });
+    output = { systemMessage: message };
   }
   if (output !== undefined) {
     process.stdout.write(`${JSON.stringify(output)}\n`);
