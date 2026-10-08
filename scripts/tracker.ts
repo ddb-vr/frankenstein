@@ -10,14 +10,15 @@
 // `work/.run/current.json`, as tracked by `scripts/hooks/budget.ts`.
 //
 // Every command accepts `--dry-run` (prints the planned `gh` calls instead of
-// running them and writes no files; needs no `.env` and no network). Output
-// is one JSON line.
+// running them and writes no files; needs no network). Dry-run still reads
+// `.env` when present, so it shows the real `GITHUB_REPO`, else a placeholder.
+// Output is one JSON line.
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { runAsBot } from "./github-app-token.ts";
-import { currentSessionId, getRunUsage } from "./hooks/budget.ts";
+import { currentSessionId, getRunUsage, peekRunUsage } from "./hooks/budget.ts";
 import { loadDotEnv } from "./lib/env.ts";
 import { SKILL_NAME } from "./lib/examples.ts";
 import { writeIssueRecord } from "./lib/issue.ts";
@@ -325,7 +326,7 @@ const CLI_OPTIONS = {
 export interface RunOptions {
   /** Replaces the bot `gh` outside dry-run (tests). */
   gh?: Gh;
-  /** Repo whose `work/` holds issue records and run state. */
+  /** Repo whose `.env` is loaded and whose `work/` holds issue records and run state. */
   root?: string;
 }
 
@@ -341,9 +342,7 @@ export const run = async (
   });
   const [command] = positionals;
   const dryRun = values["dry-run"];
-  if (!dryRun) {
-    loadDotEnv();
-  }
+  loadDotEnv(root);
   const repo = resolveRepo(dryRun);
   const calls: GhCall[] = [];
   const ctx: Context = {
@@ -379,9 +378,10 @@ export const run = async (
     case "done": {
       const issue = requireIssue(values.issue);
       const summary = requireText(values.summary, "summary");
+      const sessionUsage = dryRun ? peekRunUsage : getRunUsage;
       const usage = values.usage
         ? parseUsage(await readFile(values.usage, "utf8"))
-        : getRunUsage(currentSessionId(root), root);
+        : sessionUsage(currentSessionId(root), root);
       const cost = computeCost(usage);
       result = await completeIssue(ctx, issue, summary, cost, values.version);
       break;

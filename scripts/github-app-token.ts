@@ -110,14 +110,10 @@ interface CachedToken {
 }
 
 let cachedToken: CachedToken | undefined;
+// In-flight mint shared by concurrent callers; cleared once it settles.
+let pendingToken: Promise<string> | undefined;
 
-export const getInstallationToken = async (): Promise<string> => {
-  if (
-    cachedToken &&
-    Date.now() < cachedToken.expiresAt - TOKEN_REFRESH_MARGIN_MS
-  ) {
-    return cachedToken.token;
-  }
+const mintInstallationToken = async (): Promise<string> => {
   const installationId = requireEnv("GITHUB_APP_INSTALLATION_ID");
   const data = await githubRequest(
     "POST",
@@ -130,17 +126,29 @@ export const getInstallationToken = async (): Promise<string> => {
   return token;
 };
 
+export const getInstallationToken = (): Promise<string> => {
+  if (
+    cachedToken &&
+    Date.now() < cachedToken.expiresAt - TOKEN_REFRESH_MARGIN_MS
+  ) {
+    return Promise.resolve(cachedToken.token);
+  }
+  pendingToken ??= mintInstallationToken().finally(() => {
+    pendingToken = undefined;
+  });
+  return pendingToken;
+};
+
 export interface BotIdentity {
   email: string;
   name: string;
 }
 
-let cachedIdentity: BotIdentity | undefined;
+// The bot identity never changes, so the (single-flight) lookup is cached for
+// the process lifetime; a failed lookup is dropped so the next call retries.
+let cachedIdentity: Promise<BotIdentity> | undefined;
 
-export const getBotIdentity = async (): Promise<BotIdentity> => {
-  if (cachedIdentity) {
-    return cachedIdentity;
-  }
+const fetchBotIdentity = async (): Promise<BotIdentity> => {
   const app = await githubRequest("GET", "/app", await appJwt());
   const name = `${readString(app, "slug")}[bot]`;
   const user = await githubRequest(
@@ -148,10 +156,17 @@ export const getBotIdentity = async (): Promise<BotIdentity> => {
     `/users/${encodeURIComponent(name)}`,
     await getInstallationToken()
   );
-  cachedIdentity = {
+  return {
     email: `${readString(user, "id")}+${name}@users.noreply.github.com`,
     name,
   };
+};
+
+export const getBotIdentity = (): Promise<BotIdentity> => {
+  cachedIdentity ??= fetchBotIdentity().catch((error: unknown) => {
+    cachedIdentity = undefined;
+    throw error;
+  });
   return cachedIdentity;
 };
 

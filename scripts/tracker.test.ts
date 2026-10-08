@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -191,16 +199,46 @@ test("open --dry-run plans labels and issue creation", async () => {
   });
 });
 
-test("dry-run uses a placeholder repo when GITHUB_REPO is unset", async () => {
-  const output = (await runTracker([
-    "blocked",
-    "--issue",
-    "7",
-    "--reason",
-    "x",
-    "--dry-run",
-  ])) as { repo: string };
+// Runs `run` in-process with `GITHUB_REPO` unset, restoring it afterwards
+// (dry-run loads `<root>/.env` into `process.env`).
+const withoutGitHubRepo = async <T>(action: () => Promise<T>): Promise<T> => {
+  const saved = process.env.GITHUB_REPO;
+  delete process.env.GITHUB_REPO;
+  try {
+    return await action();
+  } finally {
+    if (saved === undefined) {
+      delete process.env.GITHUB_REPO;
+    } else {
+      process.env.GITHUB_REPO = saved;
+    }
+  }
+};
+
+const BLOCKED_DRY_RUN = [
+  "blocked",
+  "--issue",
+  "7",
+  "--reason",
+  "x",
+  "--dry-run",
+];
+
+test("dry-run uses a placeholder repo when GITHUB_REPO is unset and no .env", async () => {
+  const root = await mkdtemp(join(workDir, "no-env-"));
+  const output = (await withoutGitHubRepo(() =>
+    run(BLOCKED_DRY_RUN, { root })
+  )) as { repo: string };
   assert.equal(output.repo, "OWNER/REPO");
+});
+
+test("dry-run reads GITHUB_REPO from the root's .env", async () => {
+  const root = await mkdtemp(join(workDir, "with-env-"));
+  await writeFile(join(root, ".env"), "GITHUB_REPO=from/dotenv\n");
+  const output = (await withoutGitHubRepo(() =>
+    run(BLOCKED_DRY_RUN, { root })
+  )) as { repo: string };
+  assert.equal(output.repo, "from/dotenv");
 });
 
 test("blocked --dry-run plans label and comment", async () => {
@@ -333,4 +371,56 @@ test("done without --usage reports the session in work/.run/current.json", async
   assert.equal((await done()).result.totalUsd, opusOutput(100_000));
   await toolCall("session-b", 50_000);
   assert.equal((await done()).result.totalUsd, opusOutput(50_000));
+});
+
+test("done --dry-run reads session usage without touching budget state", async () => {
+  const root = join(workDir, "peek-repo");
+  await mkdir(root, { recursive: true });
+  const sessionId = "session-peek";
+  const transcript = join(root, `${sessionId}.jsonl`);
+  const assistantLine = (id: string, outputTokens: number) =>
+    `${JSON.stringify({
+      message: {
+        id,
+        model: "claude-opus-5-5",
+        usage: { input_tokens: 0, output_tokens: outputTokens },
+      },
+      type: "assistant",
+    })}\n`;
+  await writeFile(transcript, assistantLine("msg_1", 100_000));
+  checkBudget(
+    hookInput(
+      "Read",
+      { file_path: "/x" },
+      { session_id: sessionId, transcript_path: transcript }
+    ),
+    root,
+    { budgetUsd: 100, maxBuilderIterations: 5 }
+  );
+  // Usage the hook has not synced yet.
+  await appendFile(transcript, assistantLine("msg_2", 50_000));
+
+  const runDir = join(root, "work", ".run");
+  const stateFile = join(runDir, `${sessionId}.json`);
+  const stateBefore = await readFile(stateFile, "utf8");
+  const entriesBefore = await readdir(runDir);
+
+  const output = (await run(
+    ["done", "--issue", "7", "--summary", "Built.", "--dry-run"],
+    { root }
+  )) as { result: { totalUsd: number } };
+  assert.equal(
+    output.result.totalUsd,
+    computeCost([
+      {
+        cacheRead: 0,
+        cacheWrite: 0,
+        input: 0,
+        model: "claude-opus-5-5",
+        output: 150_000,
+      },
+    ]).totalUsd
+  );
+  assert.equal(await readFile(stateFile, "utf8"), stateBefore);
+  assert.deepEqual(await readdir(runDir), entriesBefore);
 });
