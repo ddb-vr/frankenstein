@@ -1,17 +1,29 @@
-// SubagentStop hook (matcher `skill-reviewer`): records the reviewer's final
-// verdict. The reviewer ends its answer with a fenced `verdict` block
-// (`{ "skill", "verdict": "approve" | "reject", "reasons": [] }`); this hook
-// writes it to `work/<skill>/review.json`, the file `registry.ts install`
-// checks. File tools never write review.json (guard-files denies it).
+// Records the skill-reviewer's final verdict. The reviewer ends its report
+// with a fenced `verdict` block (`{ "skill", "verdict": "approve" | "reject",
+// "reasons": [] }`); this hook writes it to `work/<skill>/review.json`, the
+// file `registry.ts install` checks. File tools never write review.json
+// (guard-files denies it). Two events carry the report:
+// - SubagentStop (matcher `skill-reviewer`): `last_assistant_message`.
+// - PreToolUse (matcher `SubagentHandback`): in auto mode the subagent hands
+//   its report back through that tool (`tool_input.message`); its closing
+//   text at SubagentStop is then not the report, so that stop is ignored.
 //
 // Rounds: a reject may be followed by one more review after another builder
 // iteration. An approve, or the verdict of the last round, is final.
 //
-// A missing or malformed block blocks the stop once, so the reviewer fixes its
-// answer; on the retry (`stop_hook_active`) the reviewer may stop and nothing
-// is written, so install keeps refusing. Hook errors also write nothing.
+// A missing or malformed block sends the reviewer back once (stop blocked or
+// hand-back denied) so it fixes its report; a stop already continued by this
+// hook (`stop_hook_active`) may end and nothing is written, so install keeps
+// refusing. Hook errors also write nothing.
 
-import { readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { isPlainObject, SKILL_NAME } from "../lib/examples.ts";
 import { REPO_ROOT } from "./lib.ts";
@@ -19,6 +31,8 @@ import { REPO_ROOT } from "./lib.ts";
 export const REVIEWER_AGENT = "skill-reviewer";
 export const MAX_REVIEW_ROUNDS = 2;
 const VERDICT_BLOCK = /```verdict[^\S\n]*\n([\s\S]*?)\n[^\S\n]*```/g;
+const HANDBACK_TOOL = "SubagentHandback";
+const AGENT_ID = /^[A-Za-z0-9_-]+$/;
 const BLOCK_FORMAT =
   'End your answer with exactly one fenced block:\n```verdict\n{ "skill": "<name>", "verdict": "approve" | "reject", "reasons": ["…"] }\n```';
 
@@ -33,18 +47,29 @@ export interface Review extends Verdict {
   round: number;
 }
 
-export interface StopInput {
+export interface CaptureInput {
+  /** `""` when absent. */
+  agentId: string;
   agentType: string;
+  /** The hand-back report, or the final text at stop. */
   message: string;
-  stopHookActive: boolean;
+  /** False for a stop this hook already continued once. */
+  retryAllowed: boolean;
+  source: "handback" | "stop";
 }
 
 export type CaptureOutcome =
-  /** Keep the reviewer running; `reason` is its next instruction. */
+  /** Not a reviewer report: no output. */
+  | { kind: "ignored" }
+  /** Send the reviewer back; `reason` is its next instruction. */
   | { kind: "retry"; reason: string }
   /** Nothing written; `message` is shown to the user. */
   | { kind: "skipped"; message: string }
   | { kind: "written"; review: Review };
+
+/** Marks a reviewer whose verdict arrived by hand-back (its stop is ignored). */
+const handbackMarker = (root: string, agentId: string): string =>
+  path.join(root, "work", ".run", `handback-${agentId}`);
 
 /** The last `verdict` block of a message; throws an actionable error. */
 export const parseVerdict = (message: string): Verdict => {
@@ -116,12 +141,19 @@ const previousRound = (
 };
 
 export const captureReview = (
-  input: StopInput,
+  input: CaptureInput,
   root: string,
   now: Date
 ): CaptureOutcome => {
   if (input.agentType !== REVIEWER_AGENT) {
-    return { kind: "skipped", message: `not a ${REVIEWER_AGENT} stop` };
+    return { kind: "ignored" };
+  }
+  if (
+    input.source === "stop" &&
+    input.agentId !== "" &&
+    existsSync(handbackMarker(root, input.agentId))
+  ) {
+    return { kind: "ignored" };
   }
   let verdict: Verdict;
   try {
@@ -131,7 +163,7 @@ export const captureReview = (
     }
   } catch (error) {
     const problem = error instanceof Error ? error.message : String(error);
-    if (input.stopHookActive) {
+    if (!input.retryAllowed) {
       return {
         kind: "skipped",
         message: `capture-review: no verdict recorded (${problem}); install stays blocked.`,
@@ -166,30 +198,69 @@ export const captureReview = (
   const temporary = `${file}.${process.pid}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(review, null, 2)}\n`);
   renameSync(temporary, file);
+  if (input.source === "handback" && input.agentId !== "") {
+    const marker = handbackMarker(root, input.agentId);
+    mkdirSync(path.dirname(marker), { recursive: true });
+    writeFileSync(marker, `${verdict.skill}\n`);
+  }
   return { kind: "written", review };
 };
 
-export const parseStopInput = (text: string): StopInput => {
+export const parseCaptureInput = (text: string): CaptureInput => {
   const data: unknown = JSON.parse(text);
   if (!isPlainObject(data)) {
     throw new Error("hook input is not a JSON object");
   }
-  const {
-    agent_type: agentType,
-    last_assistant_message: message,
-    stop_hook_active: stopHookActive,
-  } = data;
-  return {
+  const { agent_id: agentId, agent_type: agentType } = data;
+  const common = {
+    agentId:
+      typeof agentId === "string" && AGENT_ID.test(agentId) ? agentId : "",
     agentType: typeof agentType === "string" ? agentType : "",
-    message: typeof message === "string" ? message : "",
-    stopHookActive: stopHookActive === true,
   };
+  if (data.hook_event_name === "SubagentStop") {
+    const message = data.last_assistant_message;
+    return {
+      ...common,
+      message: typeof message === "string" ? message : "",
+      retryAllowed: data.stop_hook_active !== true,
+      source: "stop",
+    };
+  }
+  if (
+    data.hook_event_name === "PreToolUse" &&
+    data.tool_name === HANDBACK_TOOL &&
+    isPlainObject(data.tool_input)
+  ) {
+    const { message } = data.tool_input;
+    return {
+      ...common,
+      message: typeof message === "string" ? message : "",
+      retryAllowed: true,
+      source: "handback",
+    };
+  }
+  throw new Error(
+    `unexpected event ${String(data.hook_event_name)} / ${String(data.tool_name)}`
+  );
 };
 
-const outputFor = (outcome: CaptureOutcome): Record<string, string> => {
+const outputFor = (
+  outcome: CaptureOutcome,
+  source: CaptureInput["source"]
+): Record<string, unknown> | undefined => {
   switch (outcome.kind) {
+    case "ignored":
+      return;
     case "retry":
-      return { decision: "block", reason: outcome.reason };
+      return source === "stop"
+        ? { decision: "block", reason: outcome.reason }
+        : {
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              permissionDecision: "deny",
+              permissionDecisionReason: outcome.reason,
+            },
+          };
     case "skipped":
       return { systemMessage: outcome.message };
     default: {
@@ -202,15 +273,20 @@ const outputFor = (outcome: CaptureOutcome): Record<string, string> => {
 };
 
 if (import.meta.main) {
-  let output: Record<string, string>;
+  let output: Record<string, unknown> | undefined;
   try {
-    const input = parseStopInput(readFileSync(0, "utf8"));
-    output = outputFor(captureReview(input, REPO_ROOT, new Date()));
+    const input = parseCaptureInput(readFileSync(0, "utf8"));
+    output = outputFor(
+      captureReview(input, REPO_ROOT, new Date()),
+      input.source
+    );
   } catch (error) {
     // Nothing was written, so install keeps refusing (fails closed).
     output = {
       systemMessage: `capture-review failed, no verdict recorded: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
-  process.stdout.write(`${JSON.stringify(output)}\n`);
+  if (output !== undefined) {
+    process.stdout.write(`${JSON.stringify(output)}\n`);
+  }
 }
