@@ -15,6 +15,7 @@ import { after, before, test } from "node:test";
 import { promisify } from "node:util";
 import { checkBudget } from "./hooks/budget.ts";
 import { hookInput } from "./hooks/testing.ts";
+import { installAuditFixture } from "./lib/audit-fixture.ts";
 import { computeCost } from "./lib/pricing.ts";
 import {
   formatBlockedComment,
@@ -30,6 +31,14 @@ const TRACKER = join(import.meta.dirname, "tracker.ts");
 const REPO = "acme/frankenstein";
 const USAGE_SHAPE_ERROR = /JSON array/;
 const NO_ACTIVE_RUN = /no active run/;
+const CLEAN_AUDIT = {
+  bashCommands: 10,
+  denials: 0,
+  hostExecutions: 0,
+  sandboxRuns: 28,
+  session: "de781ccc-a467-4f65-a0af-77fa32bc81c4",
+  violations: [],
+};
 
 const SAMPLE_USAGE = [
   {
@@ -95,10 +104,11 @@ test("formatBlockedComment", () => {
   );
 });
 
-test("formatDoneComment renders summary, version and cost table", () => {
+test("formatDoneComment renders summary, version, cost table and audit", () => {
   const comment = formatDoneComment(
     "Built pdf-merge.",
     computeCost(SAMPLE_USAGE),
+    { ...CLEAN_AUDIT, denials: 3 },
     "v2"
   );
   assert.equal(
@@ -118,13 +128,20 @@ test("formatDoneComment renders summary, version and cost table", () => {
       "| `claude-sonnet-5-5` | 500,000 | 0 | 1,000,000 | 50,000 | $1.6000 |",
       "| **Total** | 1,500,000 | 200,000 | 3,000,000 | 250,000 | **$11.0000** |",
       "",
+      "**Sandbox audit:** sandbox runs 28, host executions 0, denials 3",
+      "",
     ].join("\n")
   );
 });
 
-test("formatDoneComment omits version when not given", () => {
-  const comment = formatDoneComment("Built.", computeCost([]));
+test("formatDoneComment omits version and reports an unavailable audit", () => {
+  const comment = formatDoneComment("Built.", computeCost([]), {
+    error: "no active run",
+  });
   assert.ok(!comment.includes("Version"));
+  assert.ok(
+    comment.endsWith("**Sandbox audit:** unavailable (no active run)\n")
+  );
 });
 
 test("parseUsage rejects malformed usage", () => {
@@ -262,8 +279,9 @@ test("blocked --dry-run plans label and comment", async () => {
   });
 });
 
-test("done --dry-run plans unblock, cost comment and close", async () => {
-  const output = await runTracker(
+test("done --dry-run plans unblock, cost and audit comment, close", async () => {
+  const { root } = await installAuditFixture("clean", join(workDir, "audited"));
+  const output = await run(
     [
       "done",
       "--issue",
@@ -276,12 +294,13 @@ test("done --dry-run plans unblock, cost comment and close", async () => {
       "v2",
       "--dry-run",
     ],
-    { GITHUB_REPO: REPO }
+    { root }
   );
+  const repo = process.env.GITHUB_REPO || "OWNER/REPO";
   assert.deepEqual(output, {
     calls: [
       {
-        args: ["issue", "view", "7", "--repo", REPO, "--json", "labels"],
+        args: ["issue", "view", "7", "--repo", repo, "--json", "labels"],
       },
       {
         args: [
@@ -289,23 +308,24 @@ test("done --dry-run plans unblock, cost comment and close", async () => {
           "edit",
           "7",
           "--repo",
-          REPO,
+          repo,
           "--remove-label",
           "blocked",
         ],
       },
       {
-        args: ["issue", "comment", "7", "--repo", REPO, "--body-file", "-"],
+        args: ["issue", "comment", "7", "--repo", repo, "--body-file", "-"],
         stdin: formatDoneComment(
           "Built pdf-merge.",
           computeCost(SAMPLE_USAGE),
+          CLEAN_AUDIT,
           "v2"
         ),
       },
-      { args: ["issue", "close", "7", "--repo", REPO] },
+      { args: ["issue", "close", "7", "--repo", repo] },
     ],
     dryRun: true,
-    repo: REPO,
+    repo,
     result: { issue: 7, state: "done", totalUsd: 11 },
   });
 });

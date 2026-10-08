@@ -74,12 +74,13 @@ install keeps refusing. Every hook decision is appended to `logs/hooks.log` (tab
 `allow`/`deny`/`block`, short reason, command or file truncated to 200 chars). `guard-files.ts` also protects
 `scripts/`, `registry.json`, the Claude settings files, `work/.run/` and `work/<skill>/review.json`, matching the target
 both as given and with symlinks resolved. `guard-bash.ts` also denies shell access to `.env`/`*.pem` (except
-`.env.example`) and `work/.run/`, and creating symlinks or hard links. Shell entry points that always
-pass (exactly, from the repo root): `node scripts/{run-examples,run-skill,registry,lock,tracker,record-fixture,fix-skill}.ts …`,
-`npm test`, `npm run check`, `npm run typecheck`, `npm run sandbox:build` (npm ones without extra arguments) and
-read-only `git` (`status`, `log`, `diff`, `show`, …). `.claude/settings.json` pre-approves only that read-only `git`
-subset and denies `gh`, `git commit`/`tag`/`push` and reads of `.env`/`*.pem`: GitHub writes go through
-`scripts/tracker.ts` and `scripts/registry.ts` as the bot.
+`.env.example`) and `work/.run/`, and creating symlinks or hard links. Shell entry points that always pass (exactly,
+from the repo root):
+`node scripts/{run-examples,run-skill,registry,lock,tracker,record-fixture,fix-skill,audit-run}.ts …`, `npm test`,
+`npm run check`, `npm run typecheck`, `npm run sandbox:build` (npm ones without extra arguments) and read-only `git`
+(`status`, `log`, `diff`, `show`, …). `.claude/settings.json` pre-approves only that read-only `git` subset and denies
+`gh`, `git commit`/`tag`/`push` and reads of `.env`/`*.pem`: GitHub writes go through `scripts/tracker.ts` and
+`scripts/registry.ts` as the bot.
 
 ```sh
 node scripts/lock.ts <skill>                                  # after the user confirms examples.json
@@ -116,6 +117,30 @@ Known limitations:
   turn) and a run can overshoot the cap by that much.
 - The hooks also apply to anyone editing this repo with Claude Code (`scripts/` is protected); maintainers disable them
   locally in `.claude/settings.local.json` (`"disableAllHooks": true`).
+
+## Sandbox audit
+
+```sh
+node scripts/audit-run.ts [--session <id>]   # default: the session in work/.run/current.json; /audit in Claude Code
+```
+
+Deterministic (no LLM): parses the session's main and subagent transcripts (found via `work/.run/<id>.json`) and
+cross-checks them with `logs/hooks.log` and the sandbox run logs started during the session. Prints one JSON line
+`{ session, bashCommands, sandboxRuns, hostExecutions, denials, violations: [{ command, reason }] }`; exits 1 when
+`hostExecutions > 0`, 2 when the audit cannot run.
+
+- `hostExecutions`: shell calls that ran and executed code from `work/` or `.claude/skills/` (a runtime, package
+  manager, shell, container CLI, script path or unverifiable command name, while the command line references skill code
+  or runs inside a skill directory) other than through `node scripts/run-examples.ts` / `node scripts/run-skill.ts`
+  from the repo root. Expected: 0.
+- `denials`: tool calls rejected by a hook, a permission rule or the user (`permissionDecision` in the transcript).
+- `violations`: each host execution; executed shell calls without a `guard-bash` allow in `hooks.log`; hook denials
+  missing from it; `run-examples` summaries whose log is missing or holds fewer sandbox records than passed examples;
+  `run-skill` calls without a run log; run-skill logs without a sandbox record.
+- `tracker.ts done` appends `**Sandbox audit:** sandbox runs N, host executions N, denials N` to the closing comment
+  (or why the audit was unavailable).
+- Logs and hook decisions within 60 s of the session's first and last transcript line count as the session's; a
+  concurrent session in the same repo blurs `sandboxRuns`.
 
 ## Build flow
 

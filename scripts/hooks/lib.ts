@@ -157,6 +157,9 @@ export const decisionSubject = (
   return typeof filePath === "string" ? `${toolName} ${filePath}` : toolName;
 };
 
+const escapeLogField = (field: string): string =>
+  field.replace(LOG_CONTROL_CHARS, (char) => LOG_ESCAPES[char] ?? char);
+
 /** Tab-separated: time, hook, decision, short reason, subject (≤200 chars). */
 export const formatLogLine = (entry: LogEntry, time: Date): string =>
   [
@@ -166,10 +169,12 @@ export const formatLogLine = (entry: LogEntry, time: Date): string =>
     shortReason(entry.reason),
     truncate(entry.subject, MAX_LOGGED_SUBJECT),
   ]
-    .map((field) =>
-      field.replace(LOG_CONTROL_CHARS, (char) => LOG_ESCAPES[char] ?? char)
-    )
+    .map(escapeLogField)
     .join("\t");
+
+/** The subject field `formatLogLine` writes for `subject`. */
+export const loggedSubject = (subject: string): string =>
+  escapeLogField(truncate(subject, MAX_LOGGED_SUBJECT));
 
 /** Appends one decision line; a broken log never changes the decision. */
 export const logDecision = (entry: LogEntry): void => {

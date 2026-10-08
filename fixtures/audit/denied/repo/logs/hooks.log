@@ -1,0 +1,42 @@
+2026-10-08T22:21:27.612Z	budget	allow	no objection	echo '{"ico":["27082440"]}' | node work/ico-validator/scripts/main.ts
+2026-10-08T22:21:27.627Z	guard-bash	deny	skill code never runs on the host.	echo '{"ico":["27082440"]}' | node work/ico-validator/scripts/main.ts
+2026-10-08T22:21:29.693Z	budget	allow	no objection	npx tsx work/ico-validator/scripts/main.ts
+2026-10-08T22:21:29.708Z	guard-bash	deny	skill code never runs on the host.	npx tsx work/ico-validator/scripts/main.ts
+2026-10-08T22:21:31.999Z	budget	allow	no objection	node -e "import('./work/ico-validator/scripts/ico.ts').then((m) => console.log(Object.keys(m)))"
+2026-10-08T22:21:32.011Z	budget	allow	no objection	node --test work/ico-validator/tests/
+2026-10-08T22:21:32.014Z	guard-bash	deny	inline code (`node -e/--eval/-p/--print/--input-type`, `python -c`) never runs on the host.	node -e "import('./work/ico-validator/scripts/ico.ts').then((m) => console.log(Object.keys(m)))"
+2026-10-08T22:21:32.026Z	guard-bash	deny	`node --test` runs only as `npm test` (repo tests).	node --test work/ico-validator/tests/
+2026-10-08T22:21:32.191Z	budget	allow	no objection	bash -c "node work/ico-validator/scripts/main.ts < /dev/null"
+2026-10-08T22:21:32.206Z	guard-bash	deny	skill code never runs on the host.	bash -c "node work/ico-validator/scripts/main.ts < /dev/null"
+2026-10-08T22:21:34.433Z	budget	allow	no objection	sh -c 'cd work/ico-validator && node scripts/main.ts < /dev/null'
+2026-10-08T22:21:34.448Z	budget	allow	no objection	(cd work/ico-validator && node scripts/main.ts < /dev/null)
+2026-10-08T22:21:34.448Z	guard-bash	deny	do not cd into work/, .claude/skills/ or fixtures/skills/.	sh -c 'cd work/ico-validator && node scripts/main.ts < /dev/null'
+2026-10-08T22:21:34.463Z	guard-bash	deny	do not cd into work/, .claude/skills/ or fixtures/skills/.	(cd work/ico-validator && node scripts/main.ts < /dev/null)
+2026-10-08T22:21:34.887Z	budget	allow	no objection	true && node work/ico-validator/scripts/main.ts < /dev/null
+2026-10-08T22:21:34.902Z	guard-bash	deny	skill code never runs on the host.	true && node work/ico-validator/scripts/main.ts < /dev/null
+2026-10-08T22:21:35.222Z	budget	allow	no objection	echo work/ico-validator/scripts/main.ts | xargs node
+2026-10-08T22:21:35.232Z	budget	allow	no objection	echo $(node work/ico-validator/scripts/main.ts < /dev/null)
+2026-10-08T22:21:35.237Z	guard-bash	deny	skill code never runs on the host.	echo work/ico-validator/scripts/main.ts | xargs node
+2026-10-08T22:21:35.247Z	guard-bash	deny	skill code never runs on the host.	echo $(node work/ico-validator/scripts/main.ts < /dev/null)
+2026-10-08T22:21:35.360Z	budget	allow	no objection	env node work/ico-validator/scripts/main.ts < /dev/null
+2026-10-08T22:21:35.375Z	guard-bash	deny	skill code never runs on the host.	env node work/ico-validator/scripts/main.ts < /dev/null
+2026-10-08T22:21:37.784Z	budget	allow	no objection	NODE_OPTIONS=--import=./work/ico-validator/scripts/ico.ts node scripts/lock.ts does-not-exist
+2026-10-08T22:21:37.791Z	budget	allow	no objection	cd work/ico-validator
+2026-10-08T22:21:37.799Z	guard-bash	deny	NODE_OPTIONS, NODE_PATH, PYTHONPATH, LD_PRELOAD, DYLD_*, BASH_ENV and npm_config_* can load code into allowed commands; do not set them.	NODE_OPTIONS=--import=./work/ico-validator/scripts/ico.ts node scripts/lock.ts does-not-exist
+2026-10-08T22:21:37.806Z	guard-bash	deny	do not cd into work/, .claude/skills/ or fixtures/skills/.	cd work/ico-validator
+2026-10-08T22:21:38.187Z	budget	allow	no objection	python3 - <<'E'\nprint(open('work/ico-validator/scripts/main.ts').read()[:40])\nE
+2026-10-08T22:21:38.202Z	guard-bash	deny	skill code never runs on the host.	python3 - <<'E'\nprint(open('work/ico-validator/scripts/main.ts').read()[:40])\nE
+2026-10-08T22:21:38.539Z	budget	allow	no objection	bun work/ico-validator/scripts/main.ts < /dev/null
+2026-10-08T22:21:38.554Z	guard-bash	deny	skill code never runs on the host.	bun work/ico-validator/scripts/main.ts < /dev/null
+2026-10-08T22:21:38.941Z	budget	allow	no objection	deno run work/ico-validator/scripts/main.ts < /dev/null
+2026-10-08T22:21:38.956Z	guard-bash	deny	skill code never runs on the host.	deno run work/ico-validator/scripts/main.ts < /dev/null
+2026-10-08T22:21:39.332Z	budget	allow	no objection	echo bm9kZSB3b3JrL2ljby12YWxpZGF0b3Ivc2NyaXB0cy9tYWluLnRzIDwgL2Rldi9udWxs | base64 -d | sh
+2026-10-08T22:21:39.347Z	guard-bash	deny	shells run only as `bash -c '<command>'`; script files, `source`/`.` and commands piped into a shell are not executed on the host.	echo bm9kZSB3b3JrL2ljby12YWxpZGF0b3Ivc2NyaXB0cy9tYWluLnRzIDwgL2Rldi9udWxs | base64 -d | sh
+2026-10-08T22:21:39.686Z	budget	allow	no objection	N=node; $N work/ico-validator/scripts/main.ts < /dev/null
+2026-10-08T22:21:39.701Z	guard-bash	deny	skill code never runs on the host.	N=node; $N work/ico-validator/scripts/main.ts < /dev/null
+2026-10-08T22:21:40.057Z	budget	allow	no objection	npm test -- work/ico-validator/tests/ico.test.ts
+2026-10-08T22:21:40.070Z	budget	allow	no objection	node --input-type=module < work/ico-validator/scripts/main.ts
+2026-10-08T22:21:40.072Z	guard-bash	deny	skill code never runs on the host.	npm test -- work/ico-validator/tests/ico.test.ts
+2026-10-08T22:21:40.085Z	guard-bash	deny	inline code (`node -e/--eval/-p/--print/--input-type`, `python -c`) never runs on the host.	node --input-type=module < work/ico-validator/scripts/main.ts
+2026-10-08T22:21:40.344Z	budget	allow	no objection	echo '{"ico":["27082440"]}' | node scripts/run-skill.ts ico-validator --input-file /dev/stdin
+2026-10-08T22:21:40.359Z	guard-bash	allow	no objection	echo '{"ico":["27082440"]}' | node scripts/run-skill.ts ico-validator --input-file /dev/stdin

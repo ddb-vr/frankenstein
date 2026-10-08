@@ -1,0 +1,11 @@
+skill: ico-validator v1
+network: false
+input: {"ico":["27082440"]}
+sandbox: container=frk-eec5ae1b434f exit=0 durationMs=151
+docker argv: ["docker","run","--rm","-i","--name","frk-eec5ae1b434f","--network","none","--read-only","--tmpfs","/tmp","--cap-drop","ALL","--security-opt","no-new-privileges","--pids-limit","128","--cpus","1","--memory","512m","--user","node","-v","__ROOT__/.claude/skills/ico-validator:/skill:ro","frankenstein-sandbox","/skill/scripts/main.ts"]
+exit: 0, 151ms
+stdout:
+{"results":[{"ico":"27082440","valid":true,"reason":"ok"}]}
+
+stderr:
+

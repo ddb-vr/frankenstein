@@ -1,0 +1,22 @@
+2026-10-08T21:43:39.394Z	budget	allow	no objection	node scripts/lock.ts ico-validator
+2026-10-08T21:43:39.409Z	guard-bash	allow	no objection	node scripts/lock.ts ico-validator
+2026-10-08T21:45:06.740Z	budget	allow	no objection	node scripts/lock.ts ico-validator
+2026-10-08T21:45:06.755Z	guard-bash	allow	no objection	node scripts/lock.ts ico-validator
+2026-10-08T21:45:35.162Z	budget	allow	no objection	node scripts/tracker.ts open --skill ico-validator --summary "Offline validation of supplier IČO lists (8 digits + modulo-11 checksum, normalization, per-item result). Needed to check whether supplie…
+2026-10-08T21:45:35.177Z	guard-bash	allow	no objection	node scripts/tracker.ts open --skill ico-validator --summary "Offline validation of supplier IČO lists (8 digits + modulo-11 checksum, normalization, per-item result). Needed to check whether supplie…
+2026-10-08T21:45:52.464Z	budget	allow	no objection	Write __ROOT__/work/ico-validator/scripts/main.ts
+2026-10-08T21:45:52.479Z	guard-files	allow	no objection	Write __ROOT__/work/ico-validator/scripts/main.ts
+2026-10-08T21:45:59.678Z	budget	allow	no objection	node scripts/run-examples.ts work/ico-validator
+2026-10-08T21:45:59.693Z	guard-bash	allow	no objection	node scripts/run-examples.ts work/ico-validator
+2026-10-08T21:47:02.258Z	budget	allow	no objection	cd __ROOT__/work/ico-validator && ls -R . | head -50; cat progress.md
+2026-10-08T21:47:02.273Z	guard-bash	allow	no objection	cd __ROOT__/work/ico-validator && ls -R . | head -50; cat progress.md
+2026-10-08T21:47:41.524Z	budget	allow	no objection	find __ROOT__/work/ico-validator -type f
+2026-10-08T21:47:41.539Z	guard-bash	allow	no objection	find __ROOT__/work/ico-validator -type f
+2026-10-08T21:47:45.981Z	budget	allow	no objection	node scripts/run-examples.ts work/ico-validator
+2026-10-08T21:47:45.996Z	guard-bash	allow	no objection	node scripts/run-examples.ts work/ico-validator
+2026-10-08T21:48:07.422Z	budget	allow	no objection	node scripts/registry.ts install ico-validator
+2026-10-08T21:48:07.437Z	guard-bash	allow	no objection	node scripts/registry.ts install ico-validator
+2026-10-08T21:48:23.761Z	budget	allow	no objection	node scripts/tracker.ts done --issue 7 --summary "Built ico-validator: offline IČO normalization (spaces, CZ prefix, zero padding) and modulo-11 checksum validation, per-item {ico, valid, reason} res…
+2026-10-08T21:48:23.776Z	guard-bash	allow	no objection	node scripts/tracker.ts done --issue 7 --summary "Built ico-validator: offline IČO normalization (spaces, CZ prefix, zero padding) and modulo-11 checksum validation, per-item {ico, valid, reason} res…
+2026-10-08T21:50:37.687Z	budget	allow	no objection	node scripts/run-skill.ts ico-validator '{"ico":["27082440"]}'
+2026-10-08T21:50:37.702Z	guard-bash	allow	no objection	node scripts/run-skill.ts ico-validator '{"ico":["27082440"]}'

@@ -1,0 +1,53 @@
+skill: __ROOT__/work/ico-validator
+started: 2026-10-08T21:47:46.205Z
+PASS validate (8 examples)
+=== unit tests
+sandbox: container=frk-254770f58904 exit=0 durationMs=1800
+docker argv: ["docker","run","--rm","-i","--name","frk-254770f58904","--network","none","--read-only","--tmpfs","/tmp","--cap-drop","ALL","--security-opt","no-new-privileges","--pids-limit","128","--cpus","1","--memory","512m","--user","node","-v","__ROOT__/work/ico-validator:/skill:ro","-e","FRANKENSTEIN_MODE=test","frankenstein-sandbox","--test","--test-reporter=spec","/skill/tests/**/*.test.ts"]
+--- node --test (exit 0, 1800ms)
+stdout:
+ℹ pass 9
+ℹ fail 0
+
+stderr:
+PASS unit tests (1800ms)
+sandbox: container=frk-dba41ecccc3f exit=0 durationMs=150
+docker argv: ["docker","run","--rm","-i","--name","frk-dba41ecccc3f","--network","none","--read-only","--tmpfs","/tmp","--cap-drop","ALL","--security-opt","no-new-privileges","--pids-limit","128","--cpus","1","--memory","512m","--user","node","-v","__ROOT__/work/ico-validator:/skill:ro","-e","FRANKENSTEIN_MODE=test","frankenstein-sandbox","/skill/scripts/main.ts"]
+=== example: checksum valid
+--- sandbox (exit 0, 150ms)
+PASS example "checksum valid" (150ms)
+sandbox: container=frk-c1626e53a130 exit=0 durationMs=150
+docker argv: ["docker","run","--rm","-i","--name","frk-c1626e53a130","--network","none","--read-only","--tmpfs","/tmp","--cap-drop","ALL","--security-opt","no-new-privileges","--pids-limit","128","--cpus","1","--memory","512m","--user","node","-v","__ROOT__/work/ico-validator:/skill:ro","-e","FRANKENSTEIN_MODE=test","frankenstein-sandbox","/skill/scripts/main.ts"]
+=== example: checksum invalid
+--- sandbox (exit 0, 150ms)
+PASS example "checksum invalid" (150ms)
+sandbox: container=frk-43b026c48bbf exit=0 durationMs=150
+docker argv: ["docker","run","--rm","-i","--name","frk-43b026c48bbf","--network","none","--read-only","--tmpfs","/tmp","--cap-drop","ALL","--security-opt","no-new-privileges","--pids-limit","128","--cpus","1","--memory","512m","--user","node","-v","__ROOT__/work/ico-validator:/skill:ro","-e","FRANKENSTEIN_MODE=test","frankenstein-sandbox","/skill/scripts/main.ts"]
+=== example: spaces removed
+--- sandbox (exit 0, 150ms)
+PASS example "spaces removed" (150ms)
+sandbox: container=frk-33feff9243a8 exit=0 durationMs=150
+docker argv: ["docker","run","--rm","-i","--name","frk-33feff9243a8","--network","none","--read-only","--tmpfs","/tmp","--cap-drop","ALL","--security-opt","no-new-privileges","--pids-limit","128","--cpus","1","--memory","512m","--user","node","-v","__ROOT__/work/ico-validator:/skill:ro","-e","FRANKENSTEIN_MODE=test","frankenstein-sandbox","/skill/scripts/main.ts"]
+=== example: cz prefix
+--- sandbox (exit 0, 150ms)
+PASS example "cz prefix" (150ms)
+sandbox: container=frk-f506b40928b5 exit=0 durationMs=150
+docker argv: ["docker","run","--rm","-i","--name","frk-f506b40928b5","--network","none","--read-only","--tmpfs","/tmp","--cap-drop","ALL","--security-opt","no-new-privileges","--pids-limit","128","--cpus","1","--memory","512m","--user","node","-v","__ROOT__/work/ico-validator:/skill:ro","-e","FRANKENSTEIN_MODE=test","frankenstein-sandbox","/skill/scripts/main.ts"]
+=== example: leading zeros
+--- sandbox (exit 0, 150ms)
+PASS example "leading zeros" (150ms)
+sandbox: container=frk-b7a767c76fb0 exit=0 durationMs=150
+docker argv: ["docker","run","--rm","-i","--name","frk-b7a767c76fb0","--network","none","--read-only","--tmpfs","/tmp","--cap-drop","ALL","--security-opt","no-new-privileges","--pids-limit","128","--cpus","1","--memory","512m","--user","node","-v","__ROOT__/work/ico-validator:/skill:ro","-e","FRANKENSTEIN_MODE=test","frankenstein-sandbox","/skill/scripts/main.ts"]
+=== example: too long
+--- sandbox (exit 0, 150ms)
+PASS example "too long" (150ms)
+sandbox: container=frk-08f86bebb273 exit=0 durationMs=150
+docker argv: ["docker","run","--rm","-i","--name","frk-08f86bebb273","--network","none","--read-only","--tmpfs","/tmp","--cap-drop","ALL","--security-opt","no-new-privileges","--pids-limit","128","--cpus","1","--memory","512m","--user","node","-v","__ROOT__/work/ico-validator:/skill:ro","-e","FRANKENSTEIN_MODE=test","frankenstein-sandbox","/skill/scripts/main.ts"]
+=== example: letters
+--- sandbox (exit 0, 150ms)
+PASS example "letters" (150ms)
+sandbox: container=frk-7f6a6f0fb23c exit=0 durationMs=150
+docker argv: ["docker","run","--rm","-i","--name","frk-7f6a6f0fb23c","--network","none","--read-only","--tmpfs","/tmp","--cap-drop","ALL","--security-opt","no-new-privileges","--pids-limit","128","--cpus","1","--memory","512m","--user","node","-v","__ROOT__/work/ico-validator:/skill:ro","-e","FRANKENSTEIN_MODE=test","frankenstein-sandbox","/skill/scripts/main.ts"]
+=== example: empty list
+--- sandbox (exit 0, 150ms)
+PASS example "empty list" (150ms)

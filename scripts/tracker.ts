@@ -1,5 +1,6 @@
 // GitHub issue lifecycle for skill builds via `gh`: open / blocked / done
-// (close with cost summary). All writes run as the GitHub App bot.
+// (close with cost summary and sandbox audit). All writes run as the GitHub
+// App bot.
 //
 //   node scripts/tracker.ts open    --skill <name> --summary <text>
 //   node scripts/tracker.ts blocked --issue <n> --reason <text>
@@ -7,7 +8,8 @@
 //
 // `open` also writes `work/<skill>/issue.json` (`{ issue, url }`). `done`
 // without `--usage` reports the usage of the Claude Code session in
-// `work/.run/current.json`, as tracked by `scripts/hooks/budget.ts`.
+// `work/.run/current.json`, as tracked by `scripts/hooks/budget.ts`, and
+// always appends the `scripts/audit-run.ts` result for that session.
 //
 // Every command accepts `--dry-run` (prints the planned `gh` calls instead of
 // running them and writes no files; needs no network). Dry-run still reads
@@ -17,6 +19,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
+import { type AuditReport, auditRun } from "./audit-run.ts";
 import { runAsBot } from "./github-app-token.ts";
 import { currentSessionId, getRunUsage, peekRunUsage } from "./hooks/budget.ts";
 import { loadDotEnv } from "./lib/env.ts";
@@ -64,9 +67,13 @@ export const formatBlockedComment = (reason: string): string =>
 const formatCount = (value: number): string => value.toLocaleString("en-US");
 const formatUsd = (value: number): string => `$${value.toFixed(USD_DECIMALS)}`;
 
+/** Audit of the closing session, or why it could not run. */
+export type AuditOutcome = AuditReport | { error: string };
+
 export const formatDoneComment = (
   summary: string,
   cost: CostReport,
+  audit: AuditOutcome,
   version?: string
 ): string => {
   const lines = ["**Done.**", "", summary.trim(), ""];
@@ -87,6 +94,12 @@ export const formatDoneComment = (
   const { totals } = cost;
   lines.push(
     `| **Total** | ${formatCount(totals.input)} | ${formatCount(totals.cacheWrite)} | ${formatCount(totals.cacheRead)} | ${formatCount(totals.output)} | **${formatUsd(cost.totalUsd)}** |`
+  );
+  lines.push(
+    "",
+    "error" in audit
+      ? `**Sandbox audit:** unavailable (${audit.error})`
+      : `**Sandbox audit:** sandbox runs ${audit.sandboxRuns}, host executions ${audit.hostExecutions}, denials ${audit.denials}`
   );
   return `${lines.join("\n")}\n`;
 };
@@ -224,6 +237,7 @@ const completeIssue = async (
   issue: number,
   summary: string,
   cost: CostReport,
+  audit: AuditOutcome,
   version?: string
 ): Promise<{ issue: number; state: "done"; totalUsd: number }> => {
   const ref = String(issue);
@@ -249,10 +263,22 @@ const completeIssue = async (
   }
   await gh(
     ["issue", "comment", ref, "--repo", repo, "--body-file", "-"],
-    formatDoneComment(summary, cost, version)
+    formatDoneComment(summary, cost, audit, version)
   );
   await gh(["issue", "close", ref, "--repo", repo]);
   return { issue, state: "done", totalUsd: cost.totalUsd };
+};
+
+// ---------------------------------------------------------------------------
+// Sandbox audit
+
+/** The audit is reported, never fatal: closing the issue must not fail on it. */
+const auditCurrentRun = (root: string): AuditOutcome => {
+  try {
+    return auditRun(currentSessionId(root), root);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -383,7 +409,14 @@ export const run = async (
         ? parseUsage(await readFile(values.usage, "utf8"))
         : sessionUsage(currentSessionId(root), root);
       const cost = computeCost(usage);
-      result = await completeIssue(ctx, issue, summary, cost, values.version);
+      result = await completeIssue(
+        ctx,
+        issue,
+        summary,
+        cost,
+        auditCurrentRun(root),
+        values.version
+      );
       break;
     }
     default:
