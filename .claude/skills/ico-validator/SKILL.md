@@ -15,6 +15,7 @@ Output: `{ "results": [ { "ico": "27082440", "valid": true, "reason": "ok" } ] }
 Error (exit 1): `{ "error": "<message>" }` when `ico` is missing, not an array, empty, or the JSON is invalid.
 
 Examples:
+
 - `{"ico":["19"]}` → `{"results":[{"ico":"00000019","valid":true,"reason":"ok"}]}`
 - `{"ico":["CZ2708A440"]}` → `{"results":[{"ico":"2708A440","valid":false,"reason":"not_digits"}]}`
 

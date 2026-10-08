@@ -35,26 +35,26 @@ answers. Nothing is locked until the last step, so every loop back to **Write** 
    call and 2–4 options per question, and adds an "Other" row for free text. Put the recommended option first. If the
    tool is unavailable, ask in plain text in the `grill-me` fallback format (numbered questions, lettered options
    `a) … b) …`) and accept answers like `1b, 2a`, or `yes` for all recommended options.
-   - Prefer offered options over open questions.
-   - The cap is **6 rounds**. After each round, call `prd` again in `questions` mode only if it still has open points
-     that would change the examples.
-   - If the request is already precise (`prd` returns "No questions"), skip the grilling. Ask a single confirmation of
-     its assumptions instead.
+  - Prefer offered options over open questions.
+  - The cap is **6 rounds**. After each round, call `prd` again in `questions` mode only if it still has open points
+    that would change the examples.
+  - If the request is already precise (`prd` returns "No questions"), skip the grilling. Ask a single confirmation of
+    its assumptions instead.
 4. **Write.** Delegate to `prd` with `mode: write`. Pass the request, every question with its answer, and any
    corrections or reviewer reasons. On a rewrite, also pass the skill name so it stays the same.
 5. **PRD review.** Delegate to `prd-reviewer` with the skill name. Read the fenced `verdict` block.
-   - `approve`: continue with step 6.
-   - `reject`: go back to step 4 and pass the `reasons`. For reasons starting with `Ask the user:`, ask the user first
-     (step 3 format) and pass the answers too. Then review again.
-   - After 3 rejects, stop and show the user the reasons.
+  - `approve`: continue with step 6.
+  - `reject`: go back to step 4 and pass the `reasons`. For reasons starting with `Ask the user:`, ask the user first
+    (step 3 format) and pass the answers too. Then review again.
+  - After 3 rejects, stop and show the user the reasons.
 6. **Confirm and lock.** Read `work/<skill>/examples.json` (the file that gets locked, not the `prd` reply) and show
    the user the Goal sentence from `PRD.md` and a Markdown table of its examples (name | input | expected). Ask "Is
    this correct?" with the options *Yes, lock it* and *Needs changes*.
-   - On *Yes*, run `node scripts/lock.ts <skill>`. Intake is done. Continue with the lifecycle at **Open issue**.
-   - On corrections, go back to step 4 with them, then step 5 (review again), then confirm again.
-   - If the PRD's Network section says Needed, tell the user that every listed domain must be in
-     `FIXTURE_ALLOWED_DOMAINS` in `.env` before the build (you cannot read `.env`; the fixture recorder refuses other
-     domains).
+  - On *Yes*, run `node scripts/lock.ts <skill>`. Intake is done. Continue with the lifecycle at **Open issue**.
+  - On corrections, go back to step 4 with them, then step 5 (review again), then confirm again.
+  - If the PRD's Network section says Needed, tell the user that every listed domain must be in
+    `FIXTURE_ALLOWED_DOMAINS` in `.env` before the build (you cannot read `.env`; the fixture recorder refuses other
+    domains).
 
 ## Build, review, install
 

@@ -24,15 +24,15 @@ The ARES demo needs `FIXTURE_ALLOWED_DOMAINS=ares.gov.cz` (the `.env.example` de
 
 ## Scripts
 
-| Script                  | Description                                   |
-|-------------------------|-----------------------------------------------|
-| `npm run check`         | Lint + format check (Ultracite/Biome)         |
-| `npm run fix`           | Auto-fix lint + format issues                 |
-| `npm run typecheck`     | `tsc --noEmit`                                |
-| `npm test`              | Run `scripts/**/*.test.ts` with `node --test` |
-| `npm run sandbox:build` | Build the `frankenstein-sandbox` Docker image |
+| Script                  | Description                                                                       |
+|-------------------------|-----------------------------------------------------------------------------------|
+| `npm run check`         | Lint + format check (Ultracite/Biome)                                             |
+| `npm run fix`           | Auto-fix lint + format issues                                                     |
+| `npm run typecheck`     | `tsc --noEmit`                                                                    |
+| `npm test`              | Run `scripts/**/*.test.ts` with `node --test`                                     |
+| `npm run sandbox:build` | Build the `frankenstein-sandbox` Docker image                                     |
 | `npm run skills -- …`   | Skill registry: `scripts/registry.ts` (see [Operator control](#operator-control)) |
-| `npm run demo:reset`    | Remove every skill with its tags, clear `work/` and `logs/` |
+| `npm run demo:reset`    | Remove every skill with its tags, clear `work/` and `logs/`                       |
 
 ## Skill test runner
 
@@ -63,14 +63,14 @@ Skill contract:
 Claude Code hooks (`.claude/settings.json`, `scripts/hooks/`) and permission deny rules enforce the build rules; prompts
 only explain them.
 
-| Rule                                                                 | Mechanism                                                                                                                                                                                                                                                                                                     |
-|----------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `examples.json` is locked once the user confirms the source of truth | `node scripts/lock.ts <skill>` writes `work/.locks/<skill>.json` (sha256 + timestamp); `guard-files.ts` denies edits while it exists                                                                                                                                                                          |
-| Nothing lands in `.claude/skills/` except through the install script | `Edit(/.claude/skills/**)` deny rule; `guard-files.ts` and `guard-bash.ts` deny writes and shell access                                                                                                                                                                                                       |
-| Only a human overrides the registry                                  | `guard-bash.ts` denies `registry.ts disable/enable/rollback/remove`, `npm run skills -- <those>` and the demo reset in any form; `Edit(/.claude/disabled-skills/**)` deny rule and `guard-files.ts` deny writes to disabled skills                                                                           |
-| Install only with passing tests and an approve verdict               | `node scripts/registry.ts install` checks lock hash, `review.json` (approve, and its `examplesHash` equals the lock) and a fresh `run-examples`; `review.json` is written only by `capture-review.ts` from the `skill-reviewer`'s single `verdict` block (SubagentStop, or the `SubagentHandback` report in auto mode); each new review supersedes the previous one; a missing, duplicated or invalid block gets one retry, then a `reject` (`no valid verdict block`) is recorded; history in `logs/<skill>/reviews.log` |
+| Rule                                                                 | Mechanism                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+|----------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `examples.json` is locked once the user confirms the source of truth | `node scripts/lock.ts <skill>` writes `work/.locks/<skill>.json` (sha256 + timestamp); `guard-files.ts` denies edits while it exists                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Nothing lands in `.claude/skills/` except through the install script | `Edit(/.claude/skills/**)` deny rule; `guard-files.ts` and `guard-bash.ts` deny writes and shell access                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Only a human overrides the registry                                  | `guard-bash.ts` denies `registry.ts disable/enable/rollback/remove`, `npm run skills -- <those>` and the demo reset in any form; `Edit(/.claude/disabled-skills/**)` deny rule and `guard-files.ts` deny writes to disabled skills                                                                                                                                                                                                                                                                                                                                                                  |
+| Install only with passing tests and an approve verdict               | `node scripts/registry.ts install` checks lock hash, `review.json` (approve, and its `examplesHash` equals the lock) and a fresh `run-examples`; `review.json` is written only by `capture-review.ts` from the `skill-reviewer`'s single `verdict` block (SubagentStop, or the `SubagentHandback` report in auto mode); each new review supersedes the previous one; a missing, duplicated or invalid block gets one retry, then a `reject` (`no valid verdict block`) is recorded; history in `logs/<skill>/reviews.log`                                                                           |
 | Generated code never executes on the host                            | `guard-bash.ts` allows interpreters and package managers (`node`, `npx`, `tsx`, `ts-node`, `bun`, `deno`, `python`, `npm`, …) only as an exact entry point from the repo root, not fed by a pipe, also inside chains, pipes, subshells, `bash -c`, substitutions and wrappers (`env`, `xargs`, `find -exec`); denies `node -e`/`--eval`/`-p`/`--input-type`, `node --test` outside `npm test`, code-loading env vars (`NODE_OPTIONS`, …), shells without `-c`, `cd` into and interpreters inside `work/`, `.claude/skills/`, `fixtures/skills/`, and docker/`--network` outside the sandbox scripts |
-| Builder iterations and USD spend per run are capped                  | `budget.ts` counts `skill-builder` calls and sums transcript usage (`MAX_BUILDER_ITERATIONS`, `BUDGET_USD_PER_RUN` in `.env`); over budget only a plain `tracker.ts` call and a Read of `work/<skill>/issue.json` pass |
+| Builder iterations and USD spend per run are capped                  | `budget.ts` counts `skill-builder` calls and sums transcript usage (`MAX_BUILDER_ITERATIONS`, `BUDGET_USD_PER_RUN` in `.env`); over budget only a plain `tracker.ts` call and a Read of `work/<skill>/issue.json` pass                                                                                                                                                                                                                                                                                                                                                                              |
 
 Hooks fail closed: a PreToolUse hook error denies the tool call; a `capture-review.ts` error records no verdict, so
 install keeps refusing. Every hook decision is appended to `logs/hooks.log` (tab-separated: time, hook,
@@ -143,8 +143,8 @@ cross-checks them with `logs/hooks.log` and the sandbox run logs started during 
 - `violations`: each host execution; executed shell calls without a `guard-bash` allow in `hooks.log`; hook denials
   missing from it; `run-examples` summaries whose log is missing or holds fewer sandbox records than passed examples;
   `run-skill` calls without a run log; run-skill logs without a sandbox record.
-- `tracker.ts done` appends `**Sandbox audit:** sandbox runs N, host executions N, denials N` to the closing comment
-  (or why the audit was unavailable).
+- `tracker.ts done` appends `**Sandbox audit:** sandbox runs N, host executions N, denials N` to the closing comment (or
+  why the audit was unavailable).
 - Logs and hook decisions within 60 s of the session's first and last transcript line count as the session's; a
   concurrent session in the same repo blurs `sandboxRuns`.
 

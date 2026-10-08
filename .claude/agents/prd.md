@@ -41,17 +41,17 @@ assumptions in plain words for the user to confirm.
 Input: the request and all answers, plus any corrections or reviewer reasons.
 
 1. Pick a short kebab-case skill name (`^[a-z0-9][a-z0-9-]*$`). On a first write, pick a name not already used by a
-   directory in `work/` or `.claude/skills/` or by an entry in `registry.json`. When the prompt gives the skill name
-   (a rewrite), reuse it.
+   directory in `work/` or `.claude/skills/` or by an entry in `registry.json`. When the prompt gives the skill name (a
+   rewrite), reuse it.
 2. Write `work/<skill>/PRD.md` with these sections:
-   - `## Goal`: one sentence starting "The user expects that at the end …"
-   - `## Inputs`: the stdin JSON shape
-   - `## Outputs`: the stdout JSON shape
-   - `## Edge cases`
-   - `## Errors`: when the skill exits 1 with `{ "error" }`
-   - `## Network`: "Not needed", or "Needed" with the exact domains and endpoints
-   - `## Out of scope`
-   - `## Open points`: anything the user did not confirm
+  - `## Goal`: one sentence starting "The user expects that at the end …"
+  - `## Inputs`: the stdin JSON shape
+  - `## Outputs`: the stdout JSON shape
+  - `## Edge cases`
+  - `## Errors`: when the skill exits 1 with `{ "error" }`
+  - `## Network`: "Not needed", or "Needed" with the exact domains and endpoints
+  - `## Out of scope`
+  - `## Open points`: anything the user did not confirm
 3. Write `work/<skill>/examples.json` in the format checked by `scripts/lib/examples.ts`:
 
 ```json
