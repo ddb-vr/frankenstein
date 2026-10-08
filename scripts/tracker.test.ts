@@ -279,7 +279,16 @@ test("blocked --dry-run plans label and comment", async () => {
   });
 });
 
-test("done --dry-run plans unblock, cost and audit comment, close", async () => {
+test("done --dry-run plans unblock, cost and audit comment, close", async (t) => {
+  const previousRepo = process.env.GITHUB_REPO;
+  process.env.GITHUB_REPO = REPO;
+  t.after(() => {
+    if (previousRepo === undefined) {
+      delete process.env.GITHUB_REPO;
+    } else {
+      process.env.GITHUB_REPO = previousRepo;
+    }
+  });
   const { root } = await installAuditFixture("clean", join(workDir, "audited"));
   const output = await run(
     [
@@ -296,11 +305,10 @@ test("done --dry-run plans unblock, cost and audit comment, close", async () => 
     ],
     { root }
   );
-  const repo = process.env.GITHUB_REPO || "OWNER/REPO";
   assert.deepEqual(output, {
     calls: [
       {
-        args: ["issue", "view", "7", "--repo", repo, "--json", "labels"],
+        args: ["issue", "view", "7", "--repo", REPO, "--json", "labels"],
       },
       {
         args: [
@@ -308,13 +316,13 @@ test("done --dry-run plans unblock, cost and audit comment, close", async () => 
           "edit",
           "7",
           "--repo",
-          repo,
+          REPO,
           "--remove-label",
           "blocked",
         ],
       },
       {
-        args: ["issue", "comment", "7", "--repo", repo, "--body-file", "-"],
+        args: ["issue", "comment", "7", "--repo", REPO, "--body-file", "-"],
         stdin: formatDoneComment(
           "Built pdf-merge.",
           computeCost(SAMPLE_USAGE),
@@ -322,10 +330,10 @@ test("done --dry-run plans unblock, cost and audit comment, close", async () => 
           "v2"
         ),
       },
-      { args: ["issue", "close", "7", "--repo", repo] },
+      { args: ["issue", "close", "7", "--repo", REPO] },
     ],
     dryRun: true,
-    repo,
+    repo: REPO,
     result: { issue: 7, state: "done", totalUsd: 11 },
   });
 });
