@@ -1,1 +1,13 @@
-{ "skills": [] }
+{
+  "skills": [
+    {
+      "enabled": true,
+      "examplesHash": "5661a3ab20e5c518fde60be2e35ed520760234ad7f58687be7e8ea7fd7ffb346",
+      "installedAt": "2026-10-08T21:48:09.822Z",
+      "issue": 7,
+      "name": "ico-validator",
+      "network": false,
+      "version": "v1"
+    }
+  ]
+}

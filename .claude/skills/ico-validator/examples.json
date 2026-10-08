@@ -1,0 +1,69 @@
+{
+  "skill": "ico-validator",
+  "entry": "scripts/main.ts",
+  "examples": [
+    {
+      "name": "checksum-valid-and-invalid",
+      "input": { "ico": ["27082440", "12345678"] },
+      "expected": {
+        "results": [
+          { "ico": "27082440", "valid": true, "reason": "ok" },
+          { "ico": "12345678", "valid": false, "reason": "checksum" }
+        ]
+      },
+      "match": "exact"
+    },
+    {
+      "name": "pads-short-value",
+      "input": { "ico": ["19"] },
+      "expected": {
+        "results": [{ "ico": "00000019", "valid": true, "reason": "ok" }]
+      },
+      "match": "exact"
+    },
+    {
+      "name": "strips-spaces",
+      "input": { "ico": ["2708 2440"] },
+      "expected": {
+        "results": [{ "ico": "27082440", "valid": true, "reason": "ok" }]
+      },
+      "match": "exact"
+    },
+    {
+      "name": "strips-cz-prefix",
+      "input": { "ico": ["CZ27082440"] },
+      "expected": {
+        "results": [{ "ico": "27082440", "valid": true, "reason": "ok" }]
+      },
+      "match": "exact"
+    },
+    {
+      "name": "rejects-letters",
+      "input": { "ico": ["2708A440"] },
+      "expected": {
+        "results": [{ "ico": "2708A440", "valid": false, "reason": "not_digits" }]
+      },
+      "match": "exact"
+    },
+    {
+      "name": "rejects-too-long",
+      "input": { "ico": ["123456789"] },
+      "expected": {
+        "results": [{ "ico": "123456789", "valid": false, "reason": "too_long" }]
+      },
+      "match": "exact"
+    },
+    {
+      "name": "error-empty-list",
+      "input": { "ico": [] },
+      "expected": { "error": true },
+      "match": "exact"
+    },
+    {
+      "name": "error-missing-field",
+      "input": {},
+      "expected": { "error": true },
+      "match": "exact"
+    }
+  ]
+}
