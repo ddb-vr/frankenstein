@@ -131,14 +131,10 @@ test("a malformed answer gets one retry, then nothing is recorded", () => {
 });
 
 test("a hand-back report is recorded and that reviewer's closing stop is ignored", () => {
-  assert.equal(handback("No block here.").kind, "retry");
-  assert.equal(handback(answer(reject)).kind, "written");
-  assert.partialDeepStrictEqual(review(), { round: 1, verdict: "reject" });
-  // Same agent: its closing text is not the report.
-  assert.deepEqual(
+  const closingStop = (agentId: string) =>
     captureReview(
       {
-        agentId: "a2",
+        agentId,
         agentType: "skill-reviewer",
         message: "Handed back.",
         retryAllowed: true,
@@ -146,11 +142,19 @@ test("a hand-back report is recorded and that reviewer's closing stop is ignored
       },
       root,
       NOW
-    ),
-    { kind: "ignored" }
-  );
+    );
+  assert.equal(handback("No block here.").kind, "retry");
+  assert.equal(handback(answer(reject)).kind, "written");
+  assert.partialDeepStrictEqual(review(), { round: 1, verdict: "reject" });
+  // Same agent: its closing text is not the report.
+  assert.deepEqual(closingStop("a2"), { kind: "ignored" });
   // A later reviewer without hand-back still reports at stop.
   assert.equal(stop("Handed back.").kind, "retry");
+
+  // A valid hand-back that is not recorded (verdict final) also ends the review.
+  assert.equal(handback(answer(approve), "a3").kind, "written");
+  assert.equal(handback(answer(reject), "a4").kind, "skipped");
+  assert.deepEqual(closingStop("a4"), { kind: "ignored" });
 });
 
 test("hook process blocks a malformed stop and ignores other agents", async () => {

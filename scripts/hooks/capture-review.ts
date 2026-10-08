@@ -176,6 +176,12 @@ export const captureReview = (
       reason: `Your verdict was not recorded: ${unknownSkill ? "work/<skill> does not exist; use the exact skill name" : problem}. ${BLOCK_FORMAT}`,
     };
   }
+  // The hand-back was this reviewer's report, recorded or not: ignore its stop.
+  if (input.source === "handback" && input.agentId !== "") {
+    const marker = handbackMarker(root, input.agentId);
+    mkdirSync(path.dirname(marker), { recursive: true });
+    writeFileSync(marker, `${verdict.skill}\n`);
+  }
   const file = reviewPath(root, verdict.skill);
   const previous = previousRound(file);
   if (previous === undefined) {
@@ -198,11 +204,6 @@ export const captureReview = (
   const temporary = `${file}.${process.pid}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(review, null, 2)}\n`);
   renameSync(temporary, file);
-  if (input.source === "handback" && input.agentId !== "") {
-    const marker = handbackMarker(root, input.agentId);
-    mkdirSync(path.dirname(marker), { recursive: true });
-    writeFileSync(marker, `${verdict.skill}\n`);
-  }
   return { kind: "written", review };
 };
 
