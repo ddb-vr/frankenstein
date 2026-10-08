@@ -17,6 +17,7 @@
     ],
     "deny": [
       "Edit(/.claude/skills/**)",
+      "Edit(/.claude/disabled-skills/**)",
       "Edit(/work/.locks/**)",
       "Edit(/.claude/settings.json)",
       "Read(**/.env)",

@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "check": "ultracite check",
+    "demo:reset": "node scripts/demo-reset.ts",
     "fix": "ultracite fix",
     "sandbox:build": "docker build -t frankenstein-sandbox sandbox",
+    "skills": "node scripts/registry.ts",
     "test": "node --test \"scripts/**/*.test.ts\"",
     "typecheck": "tsc --noEmit"
   },

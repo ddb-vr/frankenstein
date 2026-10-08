@@ -2,8 +2,10 @@
 // permissions and guard-files. Blocks shell commands that touch protected
 // files or secrets (.env, *.pem), run interpreters outside the allowed entry
 // points (so skill code never runs on the host), create symlinks, enter
-// skill directories, or start containers outside the sandbox runner. Allowed
-// entry points (exact, from the repo root, not fed by a pipe) pass.
+// skill directories, start containers outside the sandbox runner, or run the
+// operator-only registry commands (`disable`, `enable`, `rollback`, `remove`,
+// demo reset). Allowed entry points (exact, from the repo root, not fed by a
+// pipe) pass.
 
 import {
   type Decision,
@@ -27,6 +29,22 @@ const NODE_ENTRY_SCRIPTS: Record<string, true> = {
   "scripts/run-skill.ts": true,
   "scripts/tracker.ts": true,
 };
+// `registry.ts` subcommands the agent may run; the rest are operator-only.
+const REGISTRY_SCRIPT = "scripts/registry.ts";
+const AGENT_REGISTRY_COMMANDS: Record<string, true> = {
+  install: true,
+  list: true,
+  show: true,
+};
+const OPERATOR_COMMANDS: Record<string, true> = {
+  disable: true,
+  enable: true,
+  remove: true,
+  rollback: true,
+};
+// npm scripts for the operator: `skills` (`registry.ts`) and `demo:reset`.
+const NPM_RUN: Record<string, true> = { run: true, "run-script": true };
+const DEMO_RESET = /(^|\/)demo-reset\.ts$|^demo:reset$/;
 // Exact: extra arguments would reach `node --test` or the tools.
 // `sandbox:build` only runs `docker build`.
 const NPM_ENTRY_POINTS: readonly (readonly string[])[] = [
@@ -198,6 +216,8 @@ const FIND_EXEC: Record<string, true> = {
   "-okdir": true,
 };
 
+const OPERATOR_REASON =
+  "Blocked: operator command – ask the user to run it in a terminal (`npm run skills -- disable|enable|rollback|remove <name>`, `npm run demo:reset`). You may run `node scripts/registry.ts list|show|install`.";
 const PROTECTED_REASON =
   "Blocked: shell access to protected files (examples.json, review.json, registry.json, work/.locks, work/.run, .claude). Use the Read tool to inspect them; lock with `node scripts/lock.ts <skill>`, install with `node scripts/registry.ts install <skill>`; run state is written only by the hooks.";
 const SECRET_REASON =
@@ -385,6 +405,12 @@ export const isEntryPoint = (words: readonly string[]): boolean => {
     );
   }
   if (words[0] === "node") {
+    if (words[1] === REGISTRY_SCRIPT) {
+      return (
+        AGENT_REGISTRY_COMMANDS[words[2] ?? ""] === true &&
+        !words.some((word) => OPERATOR_COMMANDS[word] === true)
+      );
+    }
     return NODE_ENTRY_SCRIPTS[words[1] ?? ""] === true;
   }
   return NPM_ENTRY_POINTS.some(
@@ -392,6 +418,22 @@ export const isEntryPoint = (words: readonly string[]): boolean => {
       entry.length === words.length &&
       entry.every((part, index) => words[index] === part)
   );
+};
+
+/**
+ * A human-only registry command in any form: `registry.ts` or
+ * `npm run skills` with `disable`/`enable`/`rollback`/`remove`, or the demo
+ * reset.
+ */
+const runsOperatorCommand = ({ words }: SimpleCommand): boolean => {
+  const texts = words.flatMap(forms);
+  if (texts.some((text) => DEMO_RESET.test(text))) {
+    return true;
+  }
+  const registryCli =
+    texts.some((text) => text.endsWith(REGISTRY_SCRIPT)) ||
+    (texts.includes("skills") && texts.some((text) => NPM_RUN[text] === true));
+  return registryCli && texts.some((text) => OPERATOR_COMMANDS[text] === true);
 };
 
 /**
@@ -551,6 +593,9 @@ export const checkCommand = (
   const { commands, tooDeep } = expand(checked);
   if (tooDeep) {
     return NESTING_REASON;
+  }
+  if ([...parsed.commands, ...commands].some(runsOperatorCommand)) {
+    return OPERATOR_REASON;
   }
   if (entersSkillDir(commands, cwd, root)) {
     return CHANGE_DIR_REASON;

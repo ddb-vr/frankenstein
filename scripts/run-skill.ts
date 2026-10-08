@@ -16,7 +16,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { SKILL_ENTRY, SKILL_NAME } from "./lib/examples.ts";
-import { type RegistryEntry, readRegistry } from "./registry.ts";
+import { type RegistryEntry, readRegistry } from "./lib/registry.ts";
 import { runInSandbox, type SandboxResult, SKILL_MOUNT } from "./sandbox.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");

@@ -25,6 +25,8 @@ const CONTAINERS = /only the sandbox runner starts containers/;
 const SECRETS = /shell access to secrets/;
 const SYMLINKS = /symlinks and hard links/;
 const PIPED_ENTRY = /entry points never read piped input/;
+const OPERATOR =
+  /^Blocked: operator command – ask the user to run it in a terminal/;
 
 const decide = (command: string, cwd: string = ROOT) =>
   checkShell(hookInput("Bash", { command }, { cwd }), ROOT);
@@ -402,6 +404,49 @@ test("npm entry points are exact: arguments and options are denied", () => {
     ],
     NOT_ON_HOST
   );
+});
+
+test("registry: the agent may list, show and install; operator commands are denied", () => {
+  assertAllowed([
+    "node scripts/registry.ts list",
+    "node scripts/registry.ts list --json",
+    "node scripts/registry.ts show csv-sum",
+    "node scripts/registry.ts show csv-sum --json",
+    "node scripts/registry.ts install csv-sum --issue 3",
+  ]);
+  assertDenied(
+    [
+      "node scripts/registry.ts disable csv-sum",
+      "node scripts/registry.ts enable csv-sum",
+      "node scripts/registry.ts rollback csv-sum --to v1",
+      "node scripts/registry.ts remove csv-sum --delete-tags",
+      // Options first, or an allowed command smuggling an operator one.
+      "node scripts/registry.ts --json disable csv-sum",
+      "node scripts/registry.ts show csv-sum disable",
+      "node ./scripts/registry.ts rollback csv-sum",
+      "npm run skills -- disable csv-sum",
+      "npm run-script skills -- remove csv-sum",
+      "npm run demo:reset",
+      "npm run demo:reset -- --yes",
+      "node scripts/demo-reset.ts --yes",
+      "git status && node scripts/registry.ts rollback csv-sum",
+      "bash -c 'node scripts/registry.ts enable csv-sum'",
+      "env node scripts/registry.ts disable csv-sum",
+    ],
+    OPERATOR
+  );
+  // Outside the repo root the operator reason still wins over the generic one.
+  assertDenied(
+    ["node scripts/registry.ts disable csv-sum"],
+    OPERATOR,
+    "/repo/work"
+  );
+  assert.equal(
+    isEntryPoint(["node", "scripts/registry.ts", "remove", "csv-sum"]),
+    false
+  );
+  // Read-only and unrelated commands mentioning the words still pass.
+  assertAllowed(["git log --oneline -- scripts/registry.ts", "echo disable"]);
 });
 
 test("entry points fed by a pipe are denied", () => {

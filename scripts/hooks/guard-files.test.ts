@@ -12,6 +12,8 @@ const WINDOWS_ROOT = "C:\\Users\\dev\\frankenstein";
 const LOCKED = /examples\.json is locked/;
 const REVIEW_BY_HOOK = /written only by the capture-review hook/;
 const SKILLS_PROTECTED = /\.claude\/skills is protected/;
+const DISABLED_PROTECTED =
+  /\.claude\/disabled-skills is protected; skills are disabled and enabled only by the user/;
 const HOOK_FAILED = /hook guard-files\.ts failed/;
 const THROUGH_SYMLINK = /resolves to .* through a symlink/;
 
@@ -48,6 +50,20 @@ test("examples.json is writable until the skill is locked", () => {
     checkFileWrite(input, context(["work/.locks/other.json"])),
     undefined
   );
+});
+
+test("disabled skills are the operator's: agent writes are denied", () => {
+  for (const file of [
+    "/repo/.claude/disabled-skills/csv-sum/SKILL.md",
+    "/repo/.claude/disabled-skills/new-skill/scripts/main.ts",
+    "work/csv-sum/../../.claude/Disabled-Skills/x/SKILL.md",
+  ]) {
+    assert.match(
+      checkFileWrite(write(file), context()) ?? "allowed",
+      DISABLED_PROTECTED,
+      file
+    );
+  }
 });
 
 test("lock files, installed skills, settings, scripts and registry are protected", () => {

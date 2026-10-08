@@ -1,6 +1,6 @@
 // PreToolUse hook (matcher `Write|Edit|MultiEdit|NotebookEdit`): blocks file
 // tool writes to locked acceptance examples, review verdicts (written only by
-// `capture-review.ts`), lock files, run state, installed skills, Claude
+// `capture-review.ts`), lock files, run state, installed and disabled skills, Claude
 // settings, repo scripts and the registry. The target is matched both as
 // given and with symlinks resolved, so a link (`work/x/self -> .`) cannot
 // redirect a write into a protected path.
@@ -39,6 +39,11 @@ const PROTECTED: readonly { entry: string; reason: string }[] = [
     reason: "run state is written only by the hooks (budget, capture-review)",
   },
   { entry: ".claude/skills", reason: INSTALLED_BY_SCRIPT },
+  {
+    entry: ".claude/disabled-skills",
+    reason:
+      "skills are disabled and enabled only by the user (`npm run skills -- disable|enable <name>` in a terminal)",
+  },
   { entry: ".claude/settings.json", reason: USER_OWNED },
   { entry: ".claude/settings.local.json", reason: USER_OWNED },
   { entry: "scripts", reason: USER_OWNED },
