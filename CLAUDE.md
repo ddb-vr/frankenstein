@@ -22,3 +22,7 @@ You are the orchestrator. For each task you:
 - Scripts and hooks are invoked as `node <file>.ts` (no shell scripts; must work on macOS and Windows).
 - Run `npm run check` and `npm run typecheck` before finishing.
 - Code standards: see `.claude/CLAUDE.md` (Ultracite).
+
+## Intake
+
+For a task no enabled skill covers, run the **Intake** section of `.claude/skills/frankenstein/SKILL.md` first. It covers gap detection, the `prd` questions, at most 3 rounds of user questions, user confirmation with `scripts/lock.ts`, and the `prd-reviewer` verdict.
