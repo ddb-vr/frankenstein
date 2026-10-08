@@ -1,12 +1,19 @@
-// Loads `.env` via `process.loadEnvFile` and validates required keys
-// (GitHub App credentials, repo, budget caps). Fails fast on missing values.
+// Loads the repo's `.env` (GitHub App credentials, repo, budget caps) via
+// `process.loadEnvFile`. Variables already set in the environment win.
 
-function main(): void {
-  process.stderr.write("not implemented\n");
-  process.exitCode = 1;
-}
+import path from "node:path";
 
-// Library module: only run when executed directly, never on import.
-if (import.meta.main) {
-  main();
-}
+const DOT_ENV_PATH = path.join(import.meta.dirname, "..", "..", ".env");
+
+/** Loads `.env` when present; a missing file is not an error. */
+export const loadDotEnv = (): void => {
+  try {
+    process.loadEnvFile(DOT_ENV_PATH);
+  } catch (error) {
+    const missing =
+      error instanceof Error && "code" in error && error.code === "ENOENT";
+    if (!missing) {
+      throw error;
+    }
+  }
+};

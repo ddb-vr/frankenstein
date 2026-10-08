@@ -33,11 +33,14 @@ export type MatchResult =
   | { actual: unknown; pass: false; reason: string };
 
 const MATCH_MODES: readonly MatchMode[] = ["exact", "subset"];
-const SKILL_NAME = /^[a-z0-9][a-z0-9-]*$/;
+/** Skill names are also directory names: lower-case, no path separators. */
+export const SKILL_NAME = /^[a-z0-9][a-z0-9-]*$/;
 const ERROR_EXIT_CODE = 1;
 const PATH_SEPARATOR = /[\\/]/;
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+export const isPlainObject = (
+  value: unknown
+): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const isSafeRelativePath = (value: string): boolean => {
