@@ -30,6 +30,8 @@ import {
 } from "./registry.ts";
 
 const VERSION = /^v[1-9]\d*$/;
+/** `skill/<name>@vN`, capturing the name. */
+export const SKILL_TAG = /^skill\/([a-z0-9][a-z0-9-]*)@v[1-9]\d*$/;
 const FIELD_SEPARATOR = "\u001f";
 const SHORT_COMMIT = 7;
 const USD_DECIMALS = 2;
@@ -438,10 +440,10 @@ export const rollbackSkill = (
     return { commit, version };
   });
 
-/** `skill/<name>@vN` tags on origin. */
-const remoteVersionTags = async (
+/** `skill/<name>@vN` tags on origin; of every skill without `name`. */
+export const remoteVersionTags = async (
   deps: RegistryDeps,
-  name: string
+  name?: string
 ): Promise<string[]> => {
   const output = await deps.bot("git", [
     "-C",
@@ -451,14 +453,14 @@ const remoteVersionTags = async (
     "--tags",
     "origin",
   ]);
-  const prefix = `refs/tags/skill/${name}@`;
   return output
     .split("\n")
-    .map((line) => line.split("\t")[1]?.trim() ?? "")
-    .filter(
-      (ref) => ref.startsWith(prefix) && VERSION.test(ref.slice(prefix.length))
-    )
-    .map((ref) => ref.slice("refs/tags/".length));
+    .map((line) => line.split("\t")[1]?.trim().slice("refs/tags/".length))
+    .filter((tag) => tag !== undefined)
+    .filter((tag) => {
+      const skill = SKILL_TAG.exec(tag)?.[1];
+      return skill !== undefined && (name === undefined || skill === name);
+    });
 };
 
 export const removeSkill = (

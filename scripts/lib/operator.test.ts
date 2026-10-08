@@ -364,16 +364,29 @@ test("remove --delete-tags deletes the tags locally and on origin, also for a di
   await assert.rejects(showSkill(deps, SKILL), NOT_INSTALLED);
 });
 
-test("demo reset removes every skill with its tags and clears work/ and logs/", async () => {
+test("demo reset removes every skill with its tags, orphan tags too, and clears work/ and logs/", async () => {
   writeFileSync(path.join(root, "logs", "run.log"), "x\n");
+  // Left by a skill removed earlier without --delete-tags; one only on origin.
+  await git(["tag", "skill/old-skill@v1"]);
+  await git(["tag", "skill/gone@v2"]);
+  await git([
+    "push",
+    "--quiet",
+    "origin",
+    "skill/old-skill@v1",
+    "skill/gone@v2",
+  ]);
+  await git(["tag", "-d", "skill/gone@v2"]);
+  await git(["tag", "unrelated"]);
   const result = await resetDemo(deps);
   assert.deepEqual(result.failed, []);
+  assert.deepEqual(result.orphanTags, ["skill/gone@v2", "skill/old-skill@v1"]);
   assert.deepEqual(result.cleared, ["work", "logs"]);
   assert.deepEqual(readRegistry(root).skills, []);
   assert.deepEqual(readdirSync(path.join(root, "work")), [".gitkeep"]);
   assert.deepEqual(readdirSync(path.join(root, "logs")), [".gitkeep"]);
   assert.deepEqual(await remoteTags(), []);
-  assert.equal((await git(["tag", "--list"])).trim(), "");
+  assert.equal((await git(["tag", "--list"])).trim(), "unrelated");
 });
 
 test("entries without history are migrated on read and saved migrated", async () => {
