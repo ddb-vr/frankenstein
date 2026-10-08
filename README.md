@@ -57,11 +57,12 @@ Hooks fail closed: a PreToolUse hook error denies the tool call; a `capture-revi
 ```sh
 node scripts/lock.ts <skill>                                  # after the user confirms examples.json
 node scripts/registry.ts install <skill> [--issue <n>] [--network]
-node scripts/run-skill.ts <name> '<json input>'               # run an installed, enabled skill
+node scripts/run-skill.ts <skill> '<json>'                    # run an installed, enabled skill
+node scripts/run-skill.ts <skill> --input-file <path>         # same, JSON input from a file (large inputs)
 ```
 
 - `install` copies `work/<skill>` (without `progress.md`, `review.json`, `issue.json`) to `.claude/skills/<skill>`, bumps the version (`v1`, `v2`, …), updates `registry.json` and commits, tags `skill/<skill>@vN` and pushes as the bot. The issue defaults to `work/<skill>/issue.json`, written by `tracker.ts open`. Prints `{ "installed", "version", "commit" }` or `{ "installed": false, "reason" }` (exit 1).
-- `run-skill` runs `scripts/main.ts` in the sandbox without `FRANKENSTEIN_MODE=test`, with network per the registry entry; prints the skill's JSON output, full stderr in `logs/<name>/run-<timestamp>.log`.
+- `run-skill` runs `scripts/main.ts` in the sandbox without `FRANKENSTEIN_MODE=test`, with network per the registry entry; prints the skill's JSON output, full stderr in `logs/<name>/run-<timestamp>.log`. The JSON input is the argument or the `--input-file` content (exactly one; stdin is not read), and is passed to the skill on its stdin.
 - Budget state lives in `work/.run/<session_id>.json`; `work/.run/current.json` points to the session of the latest tool call. Over budget, only `node scripts/tracker.ts` may run; `tracker.ts done` without `--usage` reports the usage of the session in `current.json`.
 
 Known limitations:

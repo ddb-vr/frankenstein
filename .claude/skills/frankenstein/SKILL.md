@@ -7,7 +7,7 @@ description: Detects a missing capability in the current task and builds, tests,
 
 Lifecycle for building a new skill:
 
-1. **Gap detection** – decide whether an existing skill covers the task; use an installed one only via `node scripts/run-skill.ts <name> '<json>'`. TODO
+1. **Gap detection** – decide whether an existing skill covers the task; use an installed one only via `node scripts/run-skill.ts <skill> '<json>'`. TODO
 2. **PRD + questions** – delegate to the `prd` agent; relay its questions to the user. TODO
 3. **Source of truth confirmed by user** – user confirms summary and `examples.json`; then lock it with `node scripts/lock.ts <skill>` (hooks block any later edit).
 4. **PRD review** – delegate to the `prd-reviewer` agent. TODO
@@ -17,7 +17,7 @@ Lifecycle for building a new skill:
 
 This covers lifecycle steps 1–4: gap detection, then a user-confirmed and reviewed source of truth (`work/<skill>/PRD.md` and `work/<skill>/examples.json`). Subagents never ask the user. You ask, and you relay the answers.
 
-1. **Gap detection.** Read `registry.json` and `.claude/skills/*/SKILL.md`. If an enabled skill covers the task, run it with `node scripts/run-skill.ts <skill>` (JSON input on stdin) and stop here. Otherwise tell the user in one line which capability is missing, then continue.
+1. **Gap detection.** Read `registry.json` and `.claude/skills/*/SKILL.md`. If an enabled skill covers the task, run it with `node scripts/run-skill.ts <skill> '<json>'` (JSON input as the argument; for large inputs write it to a file and use `--input-file <path>` instead) and stop here. Otherwise tell the user in one line which capability is missing, then continue.
 2. **Questions.** Delegate to the `prd` agent with `mode: questions`. Pass the user's request verbatim, all answers so far and the round number.
 3. **Grill me.** Ask the user the returned questions with the built-in `AskUserQuestion` tool. It takes 1–4 questions per call and 2–4 options per question, and adds an "Other" row for free text. Put the recommended option first. If the tool is unavailable, ask in plain text with numbered options (`1) … 2) …`) and accept answers like `1b, 2a`.
    - Prefer offered options over open questions.
@@ -42,6 +42,6 @@ Starts once the intake hands over a locked, PRD-reviewed `work/<skill>/`. A hook
 4. **Reject** – put the reviewer's reasons on top of `work/<skill>/progress.md` (heading `Review rejected:`), invoke `skill-builder` once more and, if it returns `pass`, `skill-reviewer` once more. A second reject → blocked.
 5. **Install** – `node scripts/registry.ts install <skill>`, plus `--network` when the PRD's Network section says network is needed. Bot commit + tag `skill/<skill>@vN`.
 6. **Done** – `node scripts/tracker.ts done --issue <n> --summary "<what was built>" --version <vN>`. Usage and cost come from the current run automatically.
-7. **Finish the user's task** – use the new skill via `node scripts/run-skill.ts <skill> '<json>'`, answer the user's original request and report the run cost (`totalUsd` from step 6).
+7. **Finish the user's task** – use the new skill via `node scripts/run-skill.ts <skill> '<json>'` (or `--input-file <path>` for large inputs), answer the user's original request and report the run cost (`totalUsd` from step 6).
 
 **Blocked** – the budget or iteration hook denies, the second review rejects, the builder returns `impossible`, or install returns `"installed": false`: run `node scripts/tracker.ts blocked --issue <n> --reason "<short reason>"`, tell the user what failed and stop.
