@@ -1,0 +1,35 @@
+{
+  "skill": "text-stats",
+  "entry": "scripts/main.ts",
+  "examples": [
+    {
+      "name": "two words",
+      "input": {
+        "text": "hello world"
+      },
+      "expected": {
+        "words": 2,
+        "chars": 11
+      },
+      "match": "exact"
+    },
+    {
+      "name": "empty text",
+      "input": {
+        "text": ""
+      },
+      "expected": {
+        "words": 0
+      },
+      "match": "subset"
+    },
+    {
+      "name": "missing text",
+      "input": {},
+      "expected": {
+        "error": true
+      },
+      "match": "exact"
+    }
+  ]
+}
