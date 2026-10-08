@@ -6,7 +6,8 @@ GitHub writes go through a GitHub App (bot identity).
 
 ## Requirements
 
-- Node.js 24 (`.nvmrc`)
+- Node.js 24.3 or newer (`.nvmrc`; the scripts rely on `import.meta.main`, which is always `false` in `.ts` files on
+  24.2)
 - Docker
 
 ## Setup
@@ -16,6 +17,10 @@ npm install
 cp .env.example .env   # fill in GitHub App credentials and caps
 npm run sandbox:build
 ```
+
+`FIXTURE_ALLOWED_DOMAINS` in `.env` lists the domains `scripts/record-fixture.ts` may record API responses from
+(comma-separated, subdomains included). The recorder reads it only from `.env`; a value set in the shell is ignored.
+The ARES demo needs `FIXTURE_ALLOWED_DOMAINS=ares.gov.cz` (the `.env.example` default).
 
 ## Scripts
 
@@ -34,7 +39,10 @@ node scripts/run-examples.ts <skillDir>   # e.g. fixtures/skills/text-stats
 ```
 
 Validates `examples.json`, runs `tests/**/*.test.ts` and every example inside the sandbox (`scripts/sandbox.ts`: no
-network, read-only root and mount, no host env). Prints one JSON summary line (exit 0 on PASS, 1 on FAIL). Full output
+network, read-only root and mount, no host env). Then a `lint` stage runs the repo's Biome rules (`.gitignore` not
+applied) and `tsc` on every file install copies (`scripts/lib/skill-lint.ts`); `node scripts/fix-skill.ts <skill>`
+applies Biome's safe fixes to `work/<skill>/` (never the locked `examples.json`, which `lock.ts` formats before
+hashing). Prints one JSON summary line (exit 0 on PASS, 1 on FAIL). Full output
 goes to `logs/<skill>/<timestamp>.log`; follow a run live with `tail -f logs/<skill>/latest.log` (Windows:
 `Get-Content -Wait`). Every sandbox run in a log starts with `sandbox: container=frk-… exit=… durationMs=…` and the
 exact `docker argv` (env values redacted), so the log proves where the code ran.
@@ -57,20 +65,25 @@ only explain them.
 |----------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `examples.json` is locked once the user confirms the source of truth | `node scripts/lock.ts <skill>` writes `work/.locks/<skill>.json` (sha256 + timestamp); `guard-files.ts` denies edits while it exists                                                                                                                                                                          |
 | Nothing lands in `.claude/skills/` except through the install script | `Edit(/.claude/skills/**)` deny rule; `guard-files.ts` and `guard-bash.ts` deny writes and shell access                                                                                                                                                                                                       |
-| Install only with passing tests and an approve verdict               | `node scripts/registry.ts install` checks lock hash, `review.json` and a fresh `run-examples`; `review.json` is written only by `capture-review.ts` from the `skill-reviewer`'s final `verdict` block (SubagentStop, or the `SubagentHandback` report in auto mode), max 2 review rounds, an approve is final |
-| Generated code never executes on the host                            | `guard-bash.ts` allows interpreters and package managers (`node`, `npx`, `tsx`, `ts-node`, `bun`, `deno`, `python`, `npm`, …) only as an exact entry point from the repo root, also inside chains, pipes, subshells, `bash -c`, substitutions and wrappers (`env`, `xargs`, `find -exec`); denies `node -e`/`--eval`/`-p`/`--input-type`, `node --test` outside `npm test`, code-loading env vars (`NODE_OPTIONS`, …), shells without `-c`, `cd` into and interpreters inside `work/`, `.claude/skills/`, `fixtures/skills/`, and docker/`--network` outside the sandbox scripts |
-| Builder iterations and USD spend per run are capped                  | `budget.ts` counts `skill-builder` calls and sums transcript usage (`MAX_BUILDER_ITERATIONS`, `BUDGET_USD_PER_RUN` in `.env`)                                                                                                                                                                                 |
+| Install only with passing tests and an approve verdict               | `node scripts/registry.ts install` checks lock hash, `review.json` (approve, and its `examplesHash` equals the lock) and a fresh `run-examples`; `review.json` is written only by `capture-review.ts` from the `skill-reviewer`'s single `verdict` block (SubagentStop, or the `SubagentHandback` report in auto mode); each new review supersedes the previous one; a missing, duplicated or invalid block gets one retry, then a `reject` (`no valid verdict block`) is recorded; history in `logs/<skill>/reviews.log` |
+| Generated code never executes on the host                            | `guard-bash.ts` allows interpreters and package managers (`node`, `npx`, `tsx`, `ts-node`, `bun`, `deno`, `python`, `npm`, …) only as an exact entry point from the repo root, not fed by a pipe, also inside chains, pipes, subshells, `bash -c`, substitutions and wrappers (`env`, `xargs`, `find -exec`); denies `node -e`/`--eval`/`-p`/`--input-type`, `node --test` outside `npm test`, code-loading env vars (`NODE_OPTIONS`, …), shells without `-c`, `cd` into and interpreters inside `work/`, `.claude/skills/`, `fixtures/skills/`, and docker/`--network` outside the sandbox scripts |
+| Builder iterations and USD spend per run are capped                  | `budget.ts` counts `skill-builder` calls and sums transcript usage (`MAX_BUILDER_ITERATIONS`, `BUDGET_USD_PER_RUN` in `.env`); over budget only a plain `tracker.ts` call and a Read of `work/<skill>/issue.json` pass |
 
 Hooks fail closed: a PreToolUse hook error denies the tool call; a `capture-review.ts` error records no verdict, so
 install keeps refusing. Every hook decision is appended to `logs/hooks.log` (tab-separated: time, hook,
 `allow`/`deny`/`block`, short reason, command or file truncated to 200 chars). `guard-files.ts` also protects
-`scripts/`, `registry.json`, the Claude settings files and `work/<skill>/review.json`. Shell entry points that always
-pass (exactly, from the repo root): `node scripts/{run-examples,run-skill,registry,lock,tracker,record-fixture}.ts …`,
+`scripts/`, `registry.json`, the Claude settings files, `work/.run/` and `work/<skill>/review.json`, matching the target
+both as given and with symlinks resolved. `guard-bash.ts` also denies shell access to `.env`/`*.pem` (except
+`.env.example`) and `work/.run/`, and creating symlinks or hard links. Shell entry points that always
+pass (exactly, from the repo root): `node scripts/{run-examples,run-skill,registry,lock,tracker,record-fixture,fix-skill}.ts …`,
 `npm test`, `npm run check`, `npm run typecheck`, `npm run sandbox:build` (npm ones without extra arguments) and
-read-only `git` (`status`, `log`, `diff`, `show`, …).
+read-only `git` (`status`, `log`, `diff`, `show`, …). `.claude/settings.json` pre-approves only that read-only `git`
+subset and denies `gh`, `git commit`/`tag`/`push` and reads of `.env`/`*.pem`: GitHub writes go through
+`scripts/tracker.ts` and `scripts/registry.ts` as the bot.
 
 ```sh
 node scripts/lock.ts <skill>                                  # after the user confirms examples.json
+node scripts/fix-skill.ts <skill>                             # Biome safe fixes + lint report for work/<skill>
 node scripts/registry.ts install <skill> [--issue <n>] [--network]
 node scripts/run-skill.ts <skill> '<json>'                    # run an installed, enabled skill
 node scripts/run-skill.ts <skill> --input-file <path>         # same, JSON input from a file (large inputs)
@@ -79,10 +92,13 @@ node scripts/run-skill.ts <skill> --input-file <path>         # same, JSON input
 - `install` copies `work/<skill>` (without `progress.md`, `review.json`, `issue.json`) to `.claude/skills/<skill>`,
   bumps the version (`v1`, `v2`, …), updates `registry.json` and commits, tags `skill/<skill>@vN` and pushes as the bot.
   The issue defaults to `work/<skill>/issue.json`, written by `tracker.ts open`. Prints
-  `{ "installed", "version", "commit" }` or `{ "installed": false, "reason" }` (exit 1).
+  `{ "installed", "version", "commit" }` or `{ "installed": false, "reason" }` (exit 1). The bot credentials
+  (`GITHUB_APP_*` in `.env`) are checked and resolved before anything changes; a failed copy, commit, tag or push
+  restores the previous `.claude/skills/<skill>`, `registry.json`, index, HEAD and tag.
 - `run-skill` runs `scripts/main.ts` in the sandbox without `FRANKENSTEIN_MODE=test`, with network per the registry
   entry; prints the skill's JSON output, full stderr in `logs/<name>/run-<timestamp>.log`. The JSON input is the
-  argument or the `--input-file` content (exactly one; stdin is not read), and is passed to the skill on its stdin.
+  argument or the `--input-file` content (exactly one; stdin is not read, and `guard-bash.ts` denies piping into
+  entry points), and is passed to the skill on its stdin.
 - Budget state lives in `work/.run/<session_id>.json`; `work/.run/current.json` points to the session of the latest tool
   call. Over budget, only `node scripts/tracker.ts` may run; `tracker.ts done` without `--usage` reports the usage of
   the session in `current.json`.
@@ -93,7 +109,7 @@ Known limitations:
   the main agent chooses the reviewer's prompt.
 - `guard-bash.ts` is a heuristic second layer (quotes, chains, `sh -c`, substitutions, wrappers and dynamic command
   names are handled; code smuggled in as data for a non-interpreter tool is not). Entry points are trusted only
-  without `cd`, substitutions or protected redirect targets.
+  without `cd`, substitutions, protected redirect targets or piped input.
 - Spend only counts models priced in `scripts/lib/pricing.ts`; usage from any other model makes the budget hook deny
   every call (fail closed). 1-hour cache writes are priced at the 5-minute rate.
 - Claude Code writes transcripts asynchronously, so spend lags by the messages not yet flushed (typically the current
