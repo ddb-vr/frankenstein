@@ -20,7 +20,7 @@
 // Exit 1 when hostExecutions > 0; exit 2 with `{ error }` on stderr when the
 // audit cannot run.
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { currentSessionId, sessionTranscripts } from "./hooks/budget.ts";
@@ -653,6 +653,15 @@ const crossCheckRunLogs = (
 // ---------------------------------------------------------------------------
 // Audit
 
+/** `file` with symlinks resolved; as given when it does not exist. */
+const realPath = (file: string): string => {
+  try {
+    return realpathSync(file);
+  } catch {
+    return file;
+  }
+};
+
 export const auditRun = (
   sessionId: string,
   root: string = REPO_ROOT
@@ -660,6 +669,7 @@ export const auditRun = (
   const transcripts = readTranscripts(sessionTranscripts(sessionId, root));
   const from = transcripts.start - WINDOW_SLACK_MS;
   const to = transcripts.end + WINDOW_SLACK_MS;
+  const realRoot = realPath(root);
   const calls: AuditedCall[] = [...transcripts.calls.values()].map((call) => {
     const result = transcripts.results.get(call.id);
     return result ? { call, result } : { call };
@@ -678,7 +688,13 @@ export const auditRun = (
     if (result?.denial !== undefined) {
       continue;
     }
-    const analysis = analyzeShellCommand(command, call.cwd || root, root);
+    // Compare real paths: a symlinked checkout or macOS /var → /private/var
+    // must not make the root look like a different directory.
+    const analysis = analyzeShellCommand(
+      command,
+      realPath(call.cwd || root),
+      realRoot
+    );
     if (analysis.hostExecution !== undefined) {
       hostExecutions += 1;
       violations.push({
