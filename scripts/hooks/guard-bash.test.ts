@@ -34,6 +34,8 @@ test("allowed entry points pass, including arguments that look dangerous", () =>
     "node scripts/run-examples.ts fixtures/skills/text-stats",
     "node scripts/run-examples.ts .claude/skills/csv-sum",
     `node scripts/run-skill.ts csv-sum '{"text":"a; b && node work/x > registry.json"}'`,
+    "node scripts/run-skill.ts ico-check --input-file work/ico-check/suppliers.json",
+    "node scripts/run-skill.ts ico-check --input-file=demo/suppliers.json",
     "node scripts/registry.ts install csv-sum --issue 3 --network",
     "node scripts/lock.ts csv-sum",
     'node scripts/tracker.ts done --issue 3 --summary "done"',

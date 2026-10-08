@@ -34,7 +34,7 @@ Only via `node scripts/run-examples.ts work/<skill>` (unit tests + every example
 ## SKILL.md
 
 - Frontmatter: `name: <skill>` and a precise `description`: what it does and when to use it, with the words a user would use. This is how a new session discovers the skill.
-- Usage: `node scripts/run-skill.ts <skill> '<json>'`.
+- Usage: `node scripts/run-skill.ts <skill> '<json>'` (JSON input as the argument), or `node scripts/run-skill.ts <skill> --input-file <path>` for large inputs. Never a pipe or stdin: `run-skill.ts` does not read stdin.
 - Input and output shape, including the error shape.
 - 2 short examples (input → output).
 - Network: whether it needs network access, and which domains.

@@ -64,9 +64,9 @@ const MAX_NESTING = 2;
 const PROTECTED_REASON =
   "Blocked: shell access to protected files (examples.json, review.json, registry.json, work/.locks, .claude). Use the Read tool to inspect them; lock with `node scripts/lock.ts <skill>`, install with `node scripts/registry.ts install <skill>`.";
 const HOST_EXEC_REASON =
-  "Blocked: skill code never runs on the host. Test it in the sandbox with `node scripts/run-examples.ts work/<skill>`; use an installed skill with `node scripts/run-skill.ts <name> '<json>'`.";
+  "Blocked: skill code never runs on the host. Test it in the sandbox with `node scripts/run-examples.ts work/<skill>`; use an installed skill with `node scripts/run-skill.ts <skill> '<json>'` (or `--input-file <path>`).";
 const CONTAINER_REASON =
-  "Blocked: only the sandbox runner starts containers. Use `node scripts/run-examples.ts <skillDir>` or `node scripts/run-skill.ts <name> '<json>'`.";
+  "Blocked: only the sandbox runner starts containers. Use `node scripts/run-examples.ts <skillDir>` or `node scripts/run-skill.ts <skill> '<json>'` (or `--input-file <path>`).";
 
 /** Both spellings of a word, normalized for matching. */
 const forms = (word: Word): string[] => [
