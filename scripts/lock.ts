@@ -5,12 +5,17 @@
 //
 //   node scripts/lock.ts <skill>
 //
-// Output: one JSON line; errors print `{ "error": … }` and exit 1.
+// The CLI Biome-formats the examples once before hashing, since the installed
+// copy is linted and a locked file can never be reformatted.
+//
+// Output: one JSON line on stdout; errors print `{ "error": … }` on stderr and
+// exit 1.
 
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { isPlainObject, SKILL_NAME, validateExamples } from "./lib/examples.ts";
+import { formatLockedExamples } from "./lib/skill-lint.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const SHA256_HEX = /^[0-9a-f]{64}$/;
@@ -111,11 +116,16 @@ const main = (): void => {
     return;
   }
   try {
+    if (readLock(REPO_ROOT, skill) === undefined) {
+      // The installed examples.json is linted, and a locked file can never be
+      // reformatted (its hash is pinned), so format it once before hashing.
+      formatLockedExamples(REPO_ROOT, examplesPath(REPO_ROOT, skill));
+    }
     const lock = lockSkill(REPO_ROOT, skill);
     process.stdout.write(`${JSON.stringify({ locked: skill, ...lock })}\n`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    process.stdout.write(`${JSON.stringify({ error: message })}\n`);
+    process.stderr.write(`${JSON.stringify({ error: message })}\n`);
     process.exitCode = 1;
   }
 };

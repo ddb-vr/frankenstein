@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -9,6 +9,7 @@ import {
   type Deps,
   type Fixture,
   isHostAllowed,
+  loadAllowlistEnv,
   parseAllowlist,
   run,
 } from "./record-fixture.ts";
@@ -22,6 +23,8 @@ const ARES_URL =
 const ALLOWED = { FIXTURE_ALLOWED_DOMAINS: "ares.gov.cz, example.com" };
 const NOT_ALLOWED = /not in FIXTURE_ALLOWED_DOMAINS/;
 const NOT_SET = /FIXTURE_ALLOWED_DOMAINS is not set/;
+const ALLOWLIST_ERROR =
+  /FIXTURE_ALLOWED_DOMAINS is not set|not in FIXTURE_ALLOWED_DOMAINS/;
 const TOO_LARGE = /exceeds 1048576 bytes/;
 const TIMED_OUT = /timed out after 10 s/;
 const REDIRECTED = /Redirected \(302\)/;
@@ -136,6 +139,28 @@ test("missing allowlist errors without making a request", async () => {
   assert.equal(calls.length, 0);
 });
 
+test("allowlist comes from .env only, never from the process env", async () => {
+  const dotEnv = join(rootDir, "allowlist.env");
+  await writeFile(
+    dotEnv,
+    "# fixture allowlist\nOTHER=1\nFIXTURE_ALLOWED_DOMAINS=ares.gov.cz\n"
+  );
+  const previous = process.env.FIXTURE_ALLOWED_DOMAINS;
+  process.env.FIXTURE_ALLOWED_DOMAINS = "evil.com";
+  try {
+    assert.deepEqual(await loadAllowlistEnv(dotEnv), {
+      FIXTURE_ALLOWED_DOMAINS: "ares.gov.cz",
+    });
+    assert.deepEqual(await loadAllowlistEnv(join(rootDir, "missing.env")), {});
+  } finally {
+    if (previous === undefined) {
+      Reflect.deleteProperty(process.env, "FIXTURE_ALLOWED_DOMAINS");
+    } else {
+      process.env.FIXTURE_ALLOWED_DOMAINS = previous;
+    }
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Output format
 
@@ -190,11 +215,12 @@ test("records error statuses and non-JSON bodies as text", async () => {
   assert.deepEqual(saved.headers, { "content-type": "text/plain" });
 });
 
-test("CLI prints exactly one JSON line on stdout for failures", async () => {
+test("CLI prints one JSON error line on stderr and ignores an env allowlist", async () => {
+  // The caller's env names the domain, but only the repo's .env counts.
   const { stdout, stderr, code } = await execFileAsync(
     process.execPath,
-    [RECORDER, "ares-lookup", "x", "https://evil.com/"],
-    { env: { ...process.env, FIXTURE_ALLOWED_DOMAINS: "example.com" } }
+    [RECORDER, "ares-lookup", "x", "https://evil.invalid/"],
+    { env: { ...process.env, FIXTURE_ALLOWED_DOMAINS: "evil.invalid" } }
   ).then(
     (ok) => ({ ...ok, code: 0 }),
     (error: { code: number; stderr: string; stdout: string }) => error
@@ -203,7 +229,7 @@ test("CLI prints exactly one JSON line on stdout for failures", async () => {
   assert.equal(stdout, "");
   const lines = stderr.trim().split("\n");
   assert.equal(lines.length, 1);
-  assert.match(JSON.parse(lines[0] ?? "").error, NOT_ALLOWED);
+  assert.match(JSON.parse(lines[0] ?? "").error, ALLOWLIST_ERROR);
 });
 
 // ---------------------------------------------------------------------------

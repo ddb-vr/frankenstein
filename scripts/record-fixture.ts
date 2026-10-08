@@ -5,12 +5,14 @@
 //
 // GET only, 10 s timeout, 1 MB max body, redirects are not followed. The host
 // must be in FIXTURE_ALLOWED_DOMAINS (comma-separated; a domain also allows its
-// subdomains). Saves `work/<skill>/fixtures/<name>.json` as
+// subdomains), read only from the repo's `.env`: the caller's environment
+// cannot widen it. Saves `work/<skill>/fixtures/<name>.json` as
 // `{ url, status, headers, body, recordedAt }` and prints one JSON line
 // `{ "recorded": "<path>", "status": <code> }`.
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { parseEnv } from "node:util";
 
 const TIMEOUT_MS = 10_000;
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -207,23 +209,32 @@ export const run = async (
   return { recorded: relativePath, status: fixture.status };
 };
 
-const loadDotEnv = (): void => {
+/**
+ * The allowlist env for `run`, taken from the `.env` file only. Process
+ * environment variables are ignored on purpose, so a command prefix like
+ * `FIXTURE_ALLOWED_DOMAINS=… node scripts/record-fixture.ts …` cannot widen it.
+ */
+export const loadAllowlistEnv = async (
+  dotEnvPath: string
+): Promise<Record<string, string | undefined>> => {
+  let content: string;
   try {
-    process.loadEnvFile(DOT_ENV_PATH);
+    content = await readFile(dotEnvPath, "utf8");
   } catch (error) {
     const missing =
       error instanceof Error && "code" in error && error.code === "ENOENT";
-    if (!missing) {
-      throw error;
+    if (missing) {
+      return {};
     }
+    throw error;
   }
+  return { [ALLOWLIST_ENV]: parseEnv(content)[ALLOWLIST_ENV] };
 };
 
 const main = async (): Promise<void> => {
   try {
-    loadDotEnv();
     const result = await run(process.argv.slice(2), {
-      env: process.env,
+      env: await loadAllowlistEnv(DOT_ENV_PATH),
       fetch: globalThis.fetch,
       now: () => new Date(),
       rootDir: REPO_ROOT,

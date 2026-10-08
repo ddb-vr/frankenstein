@@ -9,11 +9,11 @@ When the main agent (frankenstein) meets a task it cannot do with installed skil
 Flow you are implementing:
 
 1. **Gap detection** (main agent): read `registry.json` / installed skills; decide whether an enabled skill covers the task. If yes → use it via `node scripts/run-skill.ts`. If no → continue.
-2. **Intent + questions** (prd subagent, Sonnet, fresh context): estimate what the user wants and why, return 0–6 rounds of questions to the main agent. The subagent never asks the user directly. create own skill and inspire from the original https://github.com/mattpocock/skills/blob/main/skills/productivity/grilling/SKILL.md, but make it more practical for non technical user, so it asks question he will understand.
+2. **Intent + questions** (prd subagent, Sonnet, fresh context): estimate what the user wants and why, return 0–6 rounds of questions to the main agent. The subagent never asks the user directly. Questions follow the plain-language `grill-me` skill (`.claude/skills/grill-me/SKILL.md`), adapted from https://github.com/mattpocock/skills/blob/main/skills/productivity/grilling/SKILL.md for a non-technical user: everyday words in the user's language, no jargon, 2–4 options with the recommended one first and a one-line "why". Like `frankenstein`, `grill-me` is a lifecycle skill: it is not in `registry.json` and gap detection never treats it as a user capability.
 3. **Grill me** (main agent, main session): ask the user the questions, prefer offered options over open questions, max 6 rounds; skip or just confirm when the request is already precise.
-4. **Source of truth** (`prd` subagent): write `work/<skill>/PRD.md` and `work/<skill>/examples.json`.
-5. **Confirmation** (main agent): show the user the one-sentence goal and the examples in a readable table; on "yes" run `node scripts/lock.ts <skill>`; on corrections go back to step 4.
-6. **PRD review** (`prd-reviewer` subagent, Opus): approve or reject with reasons; on reject the main agent fixes via step 4 and re-confirms with the user.
+4. **Source of truth** (`prd` subagent): write `work/<skill>/PRD.md` and `work/<skill>/examples.json`. A new skill name must not clash with `work/`, `.claude/skills/` or `registry.json`.
+5. **PRD review** (`prd-reviewer` subagent, Opus): approve or reject with reasons; on reject the main agent fixes via step 4 (asking the user first when a reason needs their decision) and reviews again. Review runs before the lock, because a locked `examples.json` can never change (`guard-files.ts` blocks the write, `lock.ts` refuses to re-lock).
+6. **Confirmation** (main agent): show the user the one-sentence goal and the examples from `work/<skill>/examples.json` in a readable table; on "yes" run `node scripts/lock.ts <skill>` (hooks block any later edit); on corrections go back to step 4, then review again (step 5) and re-confirm.
 
 ## 1. Agent definitions
 
@@ -22,16 +22,16 @@ Fill in `.claude/agents/prd.md` and `.claude/agents/prd-reviewer.md` (keep the f
 `prd` must:
 
 - Work in two modes stated in its prompt: `questions` (return questions only) and `write` (write PRD.md + examples.json).
-- In `questions` mode return a compact list: question, 2–4 suggested options, why it matters. Focus on input format, output shape, edge cases, error behavior, whether network/API access is needed.
+- In `questions` mode return a compact list in plain words (per the `grill-me` skill): question, 2–4 suggested options (recommended first), why it matters. Focus on what the user gives the skill, what they want to see at the end, unusual cases, what happens when something is wrong, and where the data comes from (network/API needs, decided by the agent, not asked in technical terms).
 - In `write` mode produce `PRD.md` with sections: Goal (one sentence: „The user expects that at the end …“), Inputs, Outputs, Edge cases, Errors, Network (needed or not, which domains), Out of scope.
 - Produce 4–8 examples covering normal, edge and error cases, every one traceable to a user answer. Never invent expectations the user did not confirm; list open points in PRD.md instead.
 - Choose a kebab-case skill name.
 
-`prd-reviewer` must check: the goal is testable, examples are consistent with PRD.md and with each other, the skill is implementable within the contract (stdin/stdout JSON, offline tests with fixtures, no new npm deps), and scope is small enough for one skill. End with a fenced `verdict` block in the same format as the skill-reviewer (`{ "skill", "verdict": "approve" | "reject", "reasons": [] }`).
+`prd-reviewer` must check: the goal is testable, examples are consistent with PRD.md and with each other, the skill is implementable within the contract (stdin/stdout JSON, offline tests with fixtures, no new npm deps), and scope is small enough for one skill. End with a fenced `verdict` block in the same format as the skill-reviewer (`{ "skill", "verdict": "approve" | "reject", "reasons": [] }`). Reasons that need a user decision start with `Ask the user:`. The prd-reviewer verdict is read from its reply; `capture-review.ts` records only `skill-reviewer` verdicts.
 
 ## 2. Main agent intake instructions
 
-Write the intake part (steps 1–6 above) into `.claude/skills/frankenstein/SKILL.md`, and a short pointer in `CLAUDE.md`. Check the current Claude Code docs for a built-in tool that asks the user structured multiple-choice questions and use it if available; otherwise ask in plain text with numbered options. Coordinate with Vito: he owns the build/review/install part of the same files – add your part as its own section, don't rewrite his.
+Write the intake part (steps 1–6 above) into `.claude/skills/frankenstein/SKILL.md`, and a short pointer in `CLAUDE.md`. Check the current Claude Code docs for a built-in tool that asks the user structured multiple-choice questions and use it if available (`AskUserQuestion`); otherwise ask in plain text with numbered questions and lettered options (answers like `1b, 2a`). Coordinate with Vito: he owns the build/review/install part of the same files – add your part as its own section, don't rewrite his.
 
 ## 3. `scripts/record-fixture.ts`
 
@@ -42,9 +42,9 @@ node scripts/record-fixture.ts <skill> <name> <url>
 ```
 
 - GET only, 10 s timeout, max 1 MB response.
-- Domain allowlist from env `FIXTURE_ALLOWED_DOMAINS` (comma-separated); anything else → error.
+- Domain allowlist `FIXTURE_ALLOWED_DOMAINS` (comma-separated; a domain also allows its subdomains), read only from the repo's `.env` so a shell prefix cannot widen it; anything else → error. The ARES demo needs `FIXTURE_ALLOWED_DOMAINS=ares.gov.cz` (the `.env.example` default).
 - Saves `work/<skill>/fixtures/<name>.json` as `{ url, status, headers (content-type only), body, recordedAt }`.
-- Prints one JSON line: `{ "recorded": "<path>", "status": <code> }`.
+- Prints one JSON line: `{ "recorded": "<path>", "status": <code> }`; errors print `{ "error" }` on stderr and exit 1 (same as `scripts/lock.ts`).
 - Unit tests for allowlist, size limit and output format (mock `fetch`).
 - Tell Vito to add `node scripts/record-fixture.ts` to the Bash guard allowlist.
 

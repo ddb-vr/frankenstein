@@ -19,8 +19,9 @@ Check these points:
    come from recorded fixtures.
 4. **Scope**: one skill with one job. Reject anything that is really several tools, a UI, or a long-running service.
 
-Reject only for concrete problems, and phrase each reason as a fix the `prd` agent can apply. End your reply with
-exactly one fenced `verdict` block:
+Reject only for concrete problems, and phrase each reason as a fix the `prd` agent can apply. Start a reason with
+`Ask the user:` when the fix needs a decision only the user can make. End your reply with exactly one fenced `verdict`
+block:
 
 ```verdict
 { "skill": "<skill>", "verdict": "approve" | "reject", "reasons": ["<reason>"] }

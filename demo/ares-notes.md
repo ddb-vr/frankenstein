@@ -10,7 +10,10 @@ Verified live on 2026-10-08 against the public ARES REST API (no key, no login).
 - Developer info page: `https://ares.gov.cz/stranky/vyvojar-info` (JavaScript app, not readable without a browser; usage limits were not verified from it).
 - Code lists (legal forms, source states): `POST https://ares.gov.cz/ekonomicke-subjekty-v-be/rest/ciselniky-nazevniky/vyhledat` with body `{"kodCiselniku": "PravniForma", "zdrojCiselniku": "res"}` or `{"kodCiselniku": "StavZdroje", "zdrojCiselniku": "com"}`.
 
-Domain needed for the skill and for fixture recording: `ares.gov.cz` only.
+Domain needed for the skill and for fixture recording: `ares.gov.cz` only. Before the demo, set
+`FIXTURE_ALLOWED_DOMAINS=ares.gov.cz` in `.env` (the recorder reads it only from `.env`, not from the shell
+environment). Without it the build stops at the first fixture recording, and the agent cannot fix that itself
+because it cannot read or edit `.env`.
 
 ## What one lookup returns
 

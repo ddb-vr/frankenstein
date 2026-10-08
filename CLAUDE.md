@@ -29,5 +29,5 @@ You are the orchestrator. For each task you:
 ## Intake
 
 For a task no enabled skill covers, run the **Intake** section of `.claude/skills/frankenstein/SKILL.md` first. It
-covers gap detection, the `prd` questions, at most 3 rounds of user questions, user confirmation with `scripts/lock.ts`,
-and the `prd-reviewer` verdict.
+covers gap detection, the `prd` questions, at most 6 rounds of plain-language user questions (`grill-me` skill), the
+`prd` write, the `prd-reviewer` verdict, and finally user confirmation with `scripts/lock.ts`.
