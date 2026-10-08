@@ -7,7 +7,7 @@ import { hookInput, recordedInput, runHookProcess } from "./testing.ts";
 const ROOT = "/repo";
 const WINDOWS_ROOT = "C:\\Users\\dev\\frankenstein";
 const LOCKED = /examples\.json is locked/;
-const ALREADY_WRITTEN = /already written/;
+const REVIEW_BY_HOOK = /written only by the capture-review hook/;
 const SKILLS_PROTECTED = /\.claude\/skills is protected/;
 const HOOK_FAILED = /hook guard-files\.ts failed/;
 
@@ -70,12 +70,15 @@ test("lock files, installed skills, settings, scripts and registry are protected
   }
 });
 
-test("review.json can be written once", () => {
+test("review.json is never written by file tools", () => {
   const input = write("/repo/work/csv-sum/review.json");
-  assert.equal(checkFileWrite(input, context()), undefined);
+  assert.match(checkFileWrite(input, context()) ?? "", REVIEW_BY_HOOK);
   assert.match(
-    checkFileWrite(input, context(["work/csv-sum/review.json"])) ?? "",
-    ALREADY_WRITTEN
+    checkFileWrite(
+      write("C:\\repo\\Work\\csv-sum\\Review.json", "C:\\repo"),
+      context([], "C:\\repo")
+    ) ?? "",
+    REVIEW_BY_HOOK
   );
 });
 

@@ -37,6 +37,7 @@ test("allowed entry points pass, including arguments that look dangerous", () =>
     "node scripts/registry.ts install csv-sum --issue 3 --network",
     "node scripts/lock.ts csv-sum",
     'node scripts/tracker.ts done --issue 3 --summary "done"',
+    "node scripts/record-fixture.ts ico-check ares-ok https://ares.gov.cz/ekonomicke-subjekty-v-be/rest/ekonomicke-subjekty/27074358",
     "npm test",
     "npm run check",
     "npm run typecheck",

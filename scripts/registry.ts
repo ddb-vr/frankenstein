@@ -1,12 +1,14 @@
 // Skill registry over `registry.json`. Versions are git tags `skill/<name>@vN`.
 //
-//   node scripts/registry.ts install <skill> --issue <n> [--network]
+//   node scripts/registry.ts install <skill> [--issue <n>] [--network]
 //
 // `install` is the only way into `.claude/skills/`. It requires the locked
 // examples (unchanged), an `approve` verdict in `work/<skill>/review.json` and
 // a fresh passing `run-examples`, then copies the skill, updates the registry,
-// commits, tags and pushes as the GitHub App bot. Output is one JSON line:
-// `{ installed, version, commit }`, or `{ installed: false, reason }` (exit 1).
+// commits, tags and pushes as the GitHub App bot. The issue defaults to
+// `work/<skill>/issue.json` (written by `tracker.ts open`). Output is one JSON
+// line: `{ installed, version, commit }`, or `{ installed: false, reason }`
+// (exit 1).
 
 import { execFile } from "node:child_process";
 import {
@@ -21,13 +23,14 @@ import { parseArgs, promisify } from "node:util";
 import { runAsBot } from "./github-app-token.ts";
 import { loadDotEnv } from "./lib/env.ts";
 import { isPlainObject, SKILL_NAME } from "./lib/examples.ts";
+import { readIssueRecord } from "./lib/issue.ts";
 import { examplesPath, readLock, sha256File } from "./lock.ts";
 import type { Summary } from "./run-examples.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
 const VERSION = /^v([1-9]\d*)$/;
-const NOT_INSTALLED = new Set(["progress.md", "review.json"]);
+const NOT_INSTALLED = new Set(["issue.json", "progress.md", "review.json"]);
 // Push with the bot token: `gh` serves `GH_TOKEN` as git credentials.
 const BOT_CREDENTIALS = [
   "-c",
@@ -95,7 +98,8 @@ export interface InstallDeps {
 }
 
 export interface InstallOptions {
-  issue: number;
+  /** Defaults to `work/<skill>/issue.json`. */
+  issue?: number;
   network: boolean;
 }
 
@@ -233,6 +237,12 @@ export const install = async (
     if (!SKILL_NAME.test(skill)) {
       throw new Error(`invalid skill name "${skill}"`);
     }
+    const issue = options.issue ?? readIssueRecord(deps.root, skill)?.issue;
+    if (issue === undefined) {
+      throw new Error(
+        `no build issue: pass --issue <n> or open one with \`node scripts/tracker.ts open --skill ${skill}\``
+      );
+    }
     const examplesHash = checkLock(deps.root, skill);
     checkReview(deps.root, skill);
     const summary = await deps.runExamples(path.join(deps.root, "work", skill));
@@ -247,7 +257,7 @@ export const install = async (
       enabled: true,
       examplesHash,
       installedAt: deps.now().toISOString(),
-      issue: options.issue,
+      issue,
       name: skill,
       network: options.network,
       version: await nextVersion(deps, skill, previous),
@@ -308,17 +318,20 @@ const main = async (): Promise<void> => {
   const [command, skill] = positionals;
   if (command !== "install" || skill === undefined) {
     process.stderr.write(
-      "usage: node scripts/registry.ts install <skill> --issue <n> [--network]\n"
+      "usage: node scripts/registry.ts install <skill> [--issue <n>] [--network]\n"
     );
     process.exitCode = 2;
     return;
   }
   let result: InstallResult;
-  if (values.issue && POSITIVE_INTEGER.test(values.issue)) {
+  if (values.issue === undefined || POSITIVE_INTEGER.test(values.issue)) {
     loadDotEnv();
     result = await install(
       skill,
-      { issue: Number(values.issue), network: values.network },
+      {
+        network: values.network,
+        ...(values.issue === undefined ? {} : { issue: Number(values.issue) }),
+      },
       realDeps
     );
   } else {

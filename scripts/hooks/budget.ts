@@ -5,7 +5,9 @@
 // State: `work/.run/<session_id>.json` with the builder invocation count, the
 // byte offset read so far per transcript file and the usage per model. Each
 // call reads only the new complete lines of the main transcript and of the
-// session's subagent transcripts.
+// session's subagent transcripts. `work/.run/current.json` points to the
+// state of the session that made the latest tool call, so scripts started
+// from that session (`tracker.ts done`) find its usage.
 
 import {
   closeSync,
@@ -66,11 +68,64 @@ const TOKEN_KEYS = ["input", "cacheWrite", "cacheRead", "output"] as const;
 
 const errorCode = (error: unknown): unknown =>
   error instanceof Error && "code" in error ? error.code : undefined;
+const runDir = (root: string): string => path.join(root, "work", ".run");
 const statePath = (root: string, sessionId: string): string => {
   if (!SESSION_ID.test(sessionId)) {
     throw new Error(`unexpected session id "${sessionId}"`);
   }
-  return path.join(root, "work", ".run", `${sessionId}.json`);
+  return path.join(runDir(root), `${sessionId}.json`);
+};
+
+export interface CurrentRun {
+  sessionId: string;
+  /** Repo-relative path of the session's budget state. */
+  state: string;
+}
+
+/** Points `work/.run/current.json` at `sessionId`; rewritten only on change. */
+const markCurrent = (root: string, sessionId: string): void => {
+  const file = path.join(runDir(root), "current.json");
+  const pointer: CurrentRun = {
+    sessionId,
+    state: `work/.run/${sessionId}.json`,
+  };
+  const text = `${JSON.stringify(pointer)}\n`;
+  try {
+    if (readFileSync(file, "utf8") === text) {
+      return;
+    }
+  } catch (error) {
+    if (errorCode(error) !== "ENOENT") {
+      throw error;
+    }
+  }
+  mkdirSync(runDir(root), { recursive: true });
+  const temporary = `${file}.${process.pid}.tmp`;
+  writeFileSync(temporary, text);
+  renameSync(temporary, file);
+};
+
+/** Session of the latest tool call, from `work/.run/current.json`. */
+export const currentSessionId = (root: string = REPO_ROOT): string => {
+  let data: unknown;
+  try {
+    data = JSON.parse(
+      readFileSync(path.join(runDir(root), "current.json"), "utf8")
+    );
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") {
+      throw new Error(
+        "no active run: work/.run/current.json is written by the budget hook inside Claude Code",
+        { cause: error }
+      );
+    }
+    throw error;
+  }
+  const sessionId = isPlainObject(data) ? data.sessionId : undefined;
+  if (typeof sessionId !== "string" || !SESSION_ID.test(sessionId)) {
+    throw new Error("work/.run/current.json is malformed");
+  }
+  return sessionId;
 };
 
 const sleep = (ms: number): void => {
@@ -314,6 +369,7 @@ export const checkBudget = (
   limits: Limits
 ): Decision => {
   const file = statePath(root, input.session_id);
+  markCurrent(root, input.session_id);
   return withLock(file, () => {
     const state = loadState(file, input.session_id, input.transcript_path);
     syncUsage(state);

@@ -5,23 +5,29 @@
 //   node scripts/tracker.ts blocked --issue <n> --reason <text>
 //   node scripts/tracker.ts done    --issue <n> --summary <text> [--usage <file>] [--version <vN>]
 //
-// `done` without `--usage` reports the current Claude Code session's usage
-// (`CLAUDE_CODE_SESSION_ID`), as tracked by `scripts/hooks/budget.ts`.
+// `open` also writes `work/<skill>/issue.json` (`{ issue, url }`). `done`
+// without `--usage` reports the usage of the Claude Code session in
+// `work/.run/current.json`, as tracked by `scripts/hooks/budget.ts`.
 //
 // Every command accepts `--dry-run` (prints the planned `gh` calls instead of
-// running them; needs no `.env` and no network). Output is one JSON line.
+// running them and writes no files; needs no `.env` and no network). Output
+// is one JSON line.
 
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { parseArgs } from "node:util";
 import { runAsBot } from "./github-app-token.ts";
-import { getRunUsage } from "./hooks/budget.ts";
+import { currentSessionId, getRunUsage } from "./hooks/budget.ts";
 import { loadDotEnv } from "./lib/env.ts";
+import { SKILL_NAME } from "./lib/examples.ts";
+import { writeIssueRecord } from "./lib/issue.ts";
 import {
   type CostReport,
   computeCost,
   type UsageEntry,
 } from "./lib/pricing.ts";
 
+const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const BUILD_LABEL = "skill-build";
 const BLOCKED_LABEL = "blocked";
 const PLACEHOLDER_REPO = "OWNER/REPO";
@@ -92,7 +98,7 @@ export interface GhCall {
   stdin?: string;
 }
 
-type Gh = (args: string[], stdin?: string) => Promise<string>;
+export type Gh = (args: string[], stdin?: string) => Promise<string>;
 
 const realGh: Gh = (args, stdin) => runAsBot("gh", args, { stdin });
 
@@ -295,16 +301,6 @@ const requireIssue = (value: string | undefined): number => {
   return Number(value);
 };
 
-const sessionUsage = (): UsageEntry[] => {
-  const sessionId = process.env.CLAUDE_CODE_SESSION_ID;
-  if (!sessionId) {
-    throw new Error(
-      "Missing --usage (outside Claude Code there is no CLAUDE_CODE_SESSION_ID)"
-    );
-  }
-  return getRunUsage(sessionId);
-};
-
 const resolveRepo = (dryRun: boolean): string => {
   const repo = process.env.GITHUB_REPO;
   if (repo) {
@@ -326,7 +322,17 @@ const CLI_OPTIONS = {
   version: { type: "string" },
 } as const;
 
-export const run = async (argv: string[]): Promise<unknown> => {
+export interface RunOptions {
+  /** Replaces the bot `gh` outside dry-run (tests). */
+  gh?: Gh;
+  /** Repo whose `work/` holds issue records and run state. */
+  root?: string;
+}
+
+export const run = async (
+  argv: string[],
+  { gh, root = REPO_ROOT }: RunOptions = {}
+): Promise<unknown> => {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
     args: argv,
@@ -340,17 +346,29 @@ export const run = async (argv: string[]): Promise<unknown> => {
   }
   const repo = resolveRepo(dryRun);
   const calls: GhCall[] = [];
-  const ctx: Context = { gh: dryRun ? recordingGh(calls, repo) : realGh, repo };
+  const ctx: Context = {
+    gh: dryRun ? recordingGh(calls, repo) : (gh ?? realGh),
+    repo,
+  };
 
   let result: unknown;
   switch (command) {
-    case "open":
-      result = await openIssue(
+    case "open": {
+      const skill = requireText(values.skill, "skill");
+      if (!SKILL_NAME.test(skill)) {
+        throw new Error(`invalid skill name "${skill}"`);
+      }
+      const opened = await openIssue(
         ctx,
-        requireText(values.skill, "skill"),
+        skill,
         requireText(values.summary, "summary")
       );
+      if (!dryRun) {
+        writeIssueRecord(root, skill, opened);
+      }
+      result = opened;
       break;
+    }
     case "blocked":
       result = await blockIssue(
         ctx,
@@ -363,7 +381,7 @@ export const run = async (argv: string[]): Promise<unknown> => {
       const summary = requireText(values.summary, "summary");
       const usage = values.usage
         ? parseUsage(await readFile(values.usage, "utf8"))
-        : sessionUsage();
+        : getRunUsage(currentSessionId(root), root);
       const cost = computeCost(usage);
       result = await completeIssue(ctx, issue, summary, cost, values.version);
       break;

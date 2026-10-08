@@ -48,6 +48,18 @@
           }
         ]
       }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "skill-reviewer",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PROJECT_DIR}/scripts/hooks/capture-review.ts"]
+          }
+        ]
+      }
     ]
   }
 }

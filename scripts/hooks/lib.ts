@@ -21,6 +21,11 @@
 // - Command hooks in exec form (`command` + `args`) spawn without a shell, so
 //   `node ${CLAUDE_PROJECT_DIR}/scripts/hooks/<file>.ts` works on every OS.
 //   Hooks fire the same in the CLI, IDE extensions and the Desktop app.
+// - SubagentStop (`capture-review.ts`): matcher is the agent type; input adds
+//   `agent_type`, `last_assistant_message` (the subagent's final text) and
+//   `stop_hook_active`. Stdout JSON `{ decision: "block", reason }` keeps the
+//   subagent running with `reason` as its next instruction; `systemMessage`
+//   is shown to the user.
 
 import { readFileSync, writeSync } from "node:fs";
 import path from "node:path";

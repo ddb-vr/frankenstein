@@ -20,6 +20,7 @@ const ENTRY_POINTS: readonly (readonly string[])[] = [
   ["node", "scripts/registry.ts"],
   ["node", "scripts/lock.ts"],
   ["node", "scripts/tracker.ts"],
+  ["node", "scripts/record-fixture.ts"],
   ["npm", "test"],
   ["npm", "run", "check"],
   ["npm", "run", "typecheck"],

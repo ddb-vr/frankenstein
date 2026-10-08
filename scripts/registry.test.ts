@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
+import { writeIssueRecord } from "./lib/issue.ts";
 import { lockSkill } from "./lock.ts";
 import { type InstallDeps, install, readRegistry } from "./registry.ts";
 import type { Summary } from "./run-examples.ts";
@@ -41,6 +42,7 @@ const TESTS_FAILED = /run-examples failed at examples: expected 2, got 3/;
 const INVALID_NAME = /invalid skill name/;
 const PUSH_FAILED = /push rejected/;
 const ALREADY_LOCKED = /already locked/;
+const NO_ISSUE = /no build issue: pass --issue <n>/;
 
 let root = "";
 let workDir = "";
@@ -219,6 +221,26 @@ test("reports git failures as a failed install", async () => {
   );
   assert.equal(result.installed, false);
   assert.match("reason" in result ? result.reason : "", PUSH_FAILED);
+});
+
+test("without --issue, the issue comes from work/<skill>/issue.json", async () => {
+  lockSkill(root, SKILL);
+  approve();
+  const noIssue = await install(SKILL, { network: false }, deps());
+  assert.match("reason" in noIssue ? noIssue.reason : "", NO_ISSUE);
+  assert.deepEqual(botCalls, []);
+
+  writeIssueRecord(root, SKILL, {
+    issue: 12,
+    url: "https://github.com/acme/frankenstein/issues/12",
+  });
+  const result = await install(SKILL, { network: false }, deps());
+  assert.equal(result.installed, SKILL);
+  assert.equal(readRegistry(root).skills[0]?.issue, 12);
+  assert.equal(botCalls[1]?.[6], "Refs #12");
+  assert.ok(
+    !existsSync(path.join(root, ".claude", "skills", SKILL, "issue.json"))
+  );
 });
 
 test("a lock is written once and never replaced", () => {

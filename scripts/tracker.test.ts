@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { promisify } from "node:util";
+import { checkBudget } from "./hooks/budget.ts";
+import { hookInput } from "./hooks/testing.ts";
 import { computeCost } from "./lib/pricing.ts";
 import {
   formatBlockedComment,
@@ -12,12 +14,14 @@ import {
   formatOpenBody,
   issueTitle,
   parseUsage,
+  run,
 } from "./tracker.ts";
 
 const execFileAsync = promisify(execFile);
 const TRACKER = join(import.meta.dirname, "tracker.ts");
 const REPO = "acme/frankenstein";
 const USAGE_SHAPE_ERROR = /JSON array/;
+const NO_ACTIVE_RUN = /no active run/;
 
 const SAMPLE_USAGE = [
   {
@@ -279,4 +283,54 @@ test("invalid input exits non-zero with a JSON error", async () => {
       return true;
     }
   );
+});
+
+test("done without --usage reports the session in work/.run/current.json", async () => {
+  const root = join(workDir, "repo");
+  await mkdir(root, { recursive: true });
+  const done = () =>
+    run(["done", "--issue", "7", "--summary", "Built.", "--dry-run"], {
+      root,
+    }) as Promise<{ result: { totalUsd: number } }>;
+  await assert.rejects(done(), NO_ACTIVE_RUN);
+
+  // Each session's budget hook call points current.json at that session.
+  const toolCall = async (sessionId: string, outputTokens: number) => {
+    const transcript = join(root, `${sessionId}.jsonl`);
+    await writeFile(
+      transcript,
+      `${JSON.stringify({
+        message: {
+          id: `msg_${sessionId}`,
+          model: "claude-opus-5-5",
+          usage: { input_tokens: 0, output_tokens: outputTokens },
+        },
+        type: "assistant",
+      })}\n`
+    );
+    checkBudget(
+      hookInput(
+        "Read",
+        { file_path: "/x" },
+        { session_id: sessionId, transcript_path: transcript }
+      ),
+      root,
+      { budgetUsd: 100, maxBuilderIterations: 5 }
+    );
+  };
+  const opusOutput = (output: number) =>
+    computeCost([
+      {
+        cacheRead: 0,
+        cacheWrite: 0,
+        input: 0,
+        model: "claude-opus-5-5",
+        output,
+      },
+    ]).totalUsd;
+
+  await toolCall("session-a", 100_000);
+  assert.equal((await done()).result.totalUsd, opusOutput(100_000));
+  await toolCall("session-b", 50_000);
+  assert.equal((await done()).result.totalUsd, opusOutput(50_000));
 });
