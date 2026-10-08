@@ -31,6 +31,8 @@ test("validateExamples rejects malformed files", () => {
     ["absolute entry", { ...valid, entry: "/etc/passwd" }],
     ["escaping entry", { ...valid, entry: "scripts/../../x.ts" }],
     ["windows absolute entry", { ...valid, entry: "C:\\x.ts" }],
+    ["other entry file", { ...valid, entry: "scripts/cli.ts" }],
+    ["missing entry", { examples: valid.examples, skill: valid.skill }],
     ["empty examples", { ...valid, examples: [] }],
     ["missing expected", { ...valid, examples: [{ input: {}, name: "a" }] }],
     ["missing input", { ...valid, examples: [{ expected: {}, name: "a" }] }],

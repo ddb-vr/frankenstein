@@ -21,7 +21,7 @@ A skill directory looks like this (same layout in `.claude/skills/<name>/` and `
 ├── examples.json        # source of truth, written by the PRD subagent, locked during build
 ├── scripts/
 │   └── main.ts          # entry point
-├── tests/               # unit tests for scripts (node:test), optional for trivial skills
+├── tests/               # unit tests for scripts (node:test), optional for trivial skills; if present, needs ≥1 *.test.ts
 │   └── *.test.ts
 └── fixtures/            # recorded HTTP responses for offline tests, optional
 ```
@@ -49,6 +49,7 @@ Entry point contract (`scripts/main.ts`):
 }
 ```
 
+- `entry`: must be exactly `"scripts/main.ts"` (the file `run-skill` executes for installed skills); any other value fails validation.
 - `match`: `"exact"` (deep equal) or `"subset"` (every key in `expected` must deep-equal the same key in the output; extra output keys allowed). Default `"exact"`.
 - An example expecting an error has `"expected": { "error": true }`: passes when the script exits 1 and outputs an object with an `error` string.
 
@@ -56,10 +57,11 @@ Entry point contract (`scripts/main.ts`):
 
 Export:
 
+- `resolveSkillDir(skillDir)` – real path (symlinks resolved) of a skill directory; throws unless it is a direct child of `<repo>/work`, `<repo>/fixtures/skills` or `<repo>/.claude/skills` with a kebab-case name.
 - `buildDockerArgs(options)` – pure function returning the `docker run` argument array. Testable without Docker.
-- `runInSandbox(options)` – runs it via `execFile` (no shell), returns `{ exitCode, stdout, stderr, timedOut, durationMs }`.
+- `runInSandbox(options)` – resolves `skillDir` with `resolveSkillDir`, then runs it via `execFile` (no shell), returns `{ exitCode, stdout, stderr, timedOut, durationMs }`.
 
-Options: `{ skillDir, command: string[], stdin?, network?: boolean (default false), env?: Record<string,string>, timeoutMs? (default 30000) }`.
+Options: `{ skillDir, command: string[], stdin?, network?: boolean (default false), env?: Record<string,string>, testMode?: boolean (default true), timeoutMs? (default 30000), onRunLog? }`. `testMode: false` is only for real runs of installed skills (`run-skill`).
 
 Docker arguments (always):
 
@@ -71,14 +73,15 @@ run --rm -i --name frk-<random>
 --pids-limit 128 --cpus 1 --memory 512m
 --user node
 -v <absolute skillDir>:/skill:ro
--e FRANKENSTEIN_MODE=test          # plus only explicitly passed env vars
+-e FRANKENSTEIN_MODE=test          # only when testMode (default); plus only explicitly passed env vars
 frankenstein-sandbox <command...>
 ```
 
-- Never forward `process.env`, never mount the repo root or home, never pass `--env-file`.
+- Never forward `process.env`, never pass `--env-file`.
+- Never mount the repo root or home: `runInSandbox` accepts only skill directories (`resolveSkillDir`), and `buildDockerArgs` refuses the repo root, the home directory and any ancestor of either.
 - `skillDir` is resolved with `path.resolve` (works on Windows paths with Docker Desktop).
 - On timeout, run `docker kill frk-<name>` (killing the docker CLI alone leaves the container running).
-- Image ENTRYPOINT is `node`, so `command` is e.g. `["/skill/scripts/main.ts"]` or `["--test", "/skill/tests/"]`.
+- Image ENTRYPOINT is `node`, so `command` is e.g. `["/skill/scripts/main.ts"]` or `["--test", "--test-reporter=spec", "/skill/tests/**/*.test.ts"]`.
 
 ## 3. `scripts/run-examples.ts` (CLI)
 
@@ -86,10 +89,12 @@ frankenstein-sandbox <command...>
 node scripts/run-examples.ts <skillDir>
 ```
 
+`<skillDir>` must be `work/<skill>`, `fixtures/skills/<skill>` or `.claude/skills/<skill>` (symlinks resolved); anything else (e.g. `.` or `~`) exits 2 with a message on stderr and no summary.
+
 Steps:
 
 1. Validate `examples.json` and that `SKILL.md` and the entry exist. Invalid → FAIL with reason.
-2. If `tests/` exists: run unit tests in the sandbox (`node --test /skill/tests/`).
+2. If `tests/` exists: run unit tests in the sandbox (`node --test --test-reporter=spec /skill/tests/**/*.test.ts`). A `tests/` directory without any `*.test.ts` file → FAIL at stage `unit`. No `tests/` → `"unit": "skipped"`.
 3. Run every example in the sandbox: input JSON via stdin, compare output per `match`.
 4. Stop at the first failure only for the summary; still log every example result.
 
@@ -115,9 +120,9 @@ Also add `fixtures/skills/text-stats-broken/` – same skill with one wrong expe
 
 ## 5. Tests (`node:test`, no Docker required)
 
-- `scripts/lib/examples.test.ts` – schema validation, `exact` and `subset` matching, error-case matching.
-- `scripts/sandbox.test.ts` – `buildDockerArgs`: offline by default, network only when requested, no env leakage, read-only mount, absolute path.
-- `scripts/run-examples.test.ts` – summary formatting and reason truncation (pure functions).
+- `scripts/lib/examples.test.ts` – schema validation (including the pinned entry), `exact` and `subset` matching, error-case matching.
+- `scripts/sandbox.test.ts` – `buildDockerArgs`: offline by default, network only when requested, no env leakage, read-only mount, absolute path, refuses repo root/home/ancestors; `resolveSkillDir`: only direct children of the skill roots, symlinks resolved.
+- `scripts/run-examples.test.ts` – summary formatting, reason truncation, unit test discovery (`findUnitTests`).
 
 ## 6. Manual verification
 
@@ -131,4 +136,4 @@ Also add `fixtures/skills/text-stats-broken/` – same skill with one wrong expe
 
 - `npm run check`, `npm run typecheck`, `npm test` pass.
 - Manual verification 1–5 behaves as described on macOS; ask the teammate to run step 2 on Windows.
-- PR `feat: sandbox + skill test runner` is open.
+- PR `feat: sandbox + skill test runner` (PR #1 from `feat/sandbox`) is merged.

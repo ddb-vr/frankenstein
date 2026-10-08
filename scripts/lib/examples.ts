@@ -1,6 +1,5 @@
 // Skill contract: `examples.json` schema, runtime validator and output matching.
 
-import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 export type MatchMode = "exact" | "subset";
@@ -35,24 +34,14 @@ export type MatchResult =
 const MATCH_MODES: readonly MatchMode[] = ["exact", "subset"];
 /** Skill names are also directory names: lower-case, no path separators. */
 export const SKILL_NAME = /^[a-z0-9][a-z0-9-]*$/;
+/** The only entry point: run-examples tests it, run-skill runs it. */
+export const SKILL_ENTRY = "scripts/main.ts";
 const ERROR_EXIT_CODE = 1;
-const PATH_SEPARATOR = /[\\/]/;
 
 export const isPlainObject = (
   value: unknown
 ): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
-
-const isSafeRelativePath = (value: string): boolean => {
-  if (
-    value === "" ||
-    path.posix.isAbsolute(value) ||
-    path.win32.isAbsolute(value)
-  ) {
-    return false;
-  }
-  return !value.split(PATH_SEPARATOR).includes("..");
-};
 
 const validateExample = (
   raw: unknown,
@@ -99,11 +88,8 @@ export const validateExamples = (data: unknown): ValidationResult => {
   if (typeof data.skill !== "string" || !SKILL_NAME.test(data.skill)) {
     return { error: "skill must be a kebab-case name", ok: false };
   }
-  if (typeof data.entry !== "string" || !isSafeRelativePath(data.entry)) {
-    return {
-      error: "entry must be a relative path inside the skill directory",
-      ok: false,
-    };
+  if (data.entry !== SKILL_ENTRY) {
+    return { error: `entry must be "${SKILL_ENTRY}"`, ok: false };
   }
   if (!Array.isArray(data.examples) || data.examples.length === 0) {
     return { error: "examples must be a non-empty array", ok: false };
@@ -126,7 +112,7 @@ export const validateExamples = (data: unknown): ValidationResult => {
   }
   return {
     ok: true,
-    value: { entry: data.entry, examples, skill: data.skill },
+    value: { entry: SKILL_ENTRY, examples, skill: data.skill },
   };
 };
 

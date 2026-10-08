@@ -1,19 +1,87 @@
 // Wrapper around `docker run` for the `frankenstein-sandbox` image with
 // isolation flags (no network, read-only root, resource limits, non-root user).
-// Host environment is never forwarded; only the skill directory is mounted.
+// Host environment is never forwarded; only the skill directory is mounted,
+// never the repo root, the home directory or an ancestor of either.
 
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { realpathSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
+import { SKILL_NAME } from "./lib/examples.ts";
 
 export const SANDBOX_IMAGE = "frankenstein-sandbox";
 export const SKILL_MOUNT = "/skill";
+const REPO_ROOT = path.resolve(import.meta.dirname, "..");
+/** Repo-relative directories whose direct children are skill directories. */
+const SKILL_ROOTS: readonly string[] = [
+  "work",
+  path.join("fixtures", "skills"),
+  path.join(".claude", "skills"),
+];
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const DOCKER_FAILURE_EXIT_CODES: readonly number[] = [125, 126, 127];
 // Env values may hold secrets; only this one is logged verbatim.
 const LOGGED_ENV = "FRANKENSTEIN_MODE=test";
+
+/**
+ * Real path of `skillDir`, which must be a skill directory: a direct child of
+ * `work/`, `fixtures/skills/` or `.claude/skills/` in the repo, named like a
+ * skill. Symlinks are resolved first, so a link cannot point elsewhere.
+ * Throws otherwise (also when it does not exist).
+ */
+export const resolveSkillDir = (
+  skillDir: string,
+  repoRoot: string = REPO_ROOT
+): string => {
+  let real: string;
+  try {
+    real = realpathSync.native(path.resolve(skillDir));
+  } catch (error) {
+    throw new Error(`skill directory not found: ${skillDir}`, { cause: error });
+  }
+  const root = realpathSync.native(repoRoot);
+  const parent = path.dirname(real);
+  const isSkillDir =
+    SKILL_ROOTS.some((skillRoot) => path.join(root, skillRoot) === parent) &&
+    SKILL_NAME.test(path.basename(real));
+  if (!isSkillDir) {
+    throw new Error(
+      `not a skill directory: ${skillDir} (must be work/<skill>, fixtures/skills/<skill> or .claude/skills/<skill>)`
+    );
+  }
+  return real;
+};
+
+const realPathOrSelf = (dir: string): string => {
+  try {
+    return realpathSync.native(dir);
+  } catch {
+    return dir;
+  }
+};
+
+/** Refuses the repo root, the home directory and any ancestor of either. */
+const mountSource = (skillDir: string): string => {
+  const source = path.resolve(skillDir);
+  for (const dir of [REPO_ROOT, homedir()]) {
+    for (const protectedDir of [dir, realPathOrSelf(dir)]) {
+      const relative = path.relative(source, protectedDir);
+      const isInside =
+        relative !== ".." &&
+        !relative.startsWith(`..${path.sep}`) &&
+        !path.isAbsolute(relative);
+      if (isInside) {
+        throw new Error(
+          `refusing to mount ${source}: it is or contains the repo root or the home directory`
+        );
+      }
+    }
+  }
+  return source;
+};
 
 export interface SandboxOptions {
   /** Arguments to the image ENTRYPOINT (`node`). */
@@ -85,7 +153,7 @@ export const buildDockerArgs = (
     "--user",
     "node",
     "-v",
-    `${path.resolve(options.skillDir)}:${SKILL_MOUNT}:ro`,
+    `${mountSource(options.skillDir)}:${SKILL_MOUNT}:ro`,
     ...envArgs,
     SANDBOX_IMAGE,
     ...options.command,
@@ -127,7 +195,10 @@ export const runInSandbox = (
   options: SandboxOptions
 ): Promise<SandboxResult> => {
   const containerName = newContainerName();
-  const args = buildDockerArgs(options, containerName);
+  const args = buildDockerArgs(
+    { ...options, skillDir: resolveSkillDir(options.skillDir) },
+    containerName
+  );
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const startedAt = performance.now();
   const { promise, resolve, reject } = Promise.withResolvers<SandboxResult>();
