@@ -176,8 +176,9 @@ npm run demo:reset [-- --yes]                     # remove --delete-tags for eve
   session picks up the change.
 - `rollback` needs an enabled skill, restores `.claude/skills/<name>/` from `skill/<name>@vN` and aborts (restoring
   everything) unless `run-examples` passes on it; all tags stay.
-- `demo:reset` asks for confirmation; a failed remove leaves `work/` and `logs/` untouched. GitHub issues are never
-  touched.
+- `demo:reset` asks for confirmation, then also deletes every leftover `skill/<name>@vN` tag (locally and on origin)
+  of skills removed earlier without `--delete-tags`; a failed remove leaves the tags, `work/` and `logs/` untouched.
+  GitHub issues are never touched.
 
 ## Build flow
 

@@ -44,7 +44,7 @@ const OPERATOR_COMMANDS: Record<string, true> = {
 };
 // npm scripts for the operator: `skills` (`registry.ts`) and `demo:reset`.
 const NPM_RUN: Record<string, true> = { run: true, "run-script": true };
-const DEMO_RESET = /(^|\/)demo-reset\.ts$|^demo:reset$/;
+const DEMO_RESET_SCRIPT = "scripts/demo-reset.ts";
 // Exact: extra arguments would reach `node --test` or the tools.
 // `sandbox:build` only runs `docker build`.
 const NPM_ENTRY_POINTS: readonly (readonly string[])[] = [
@@ -421,19 +421,39 @@ export const isEntryPoint = (words: readonly string[]): boolean => {
 };
 
 /**
- * A human-only registry command in any form: `registry.ts` or
- * `npm run skills` with `disable`/`enable`/`rollback`/`remove`, or the demo
- * reset.
+ * A human-only registry command in any form: an interpreter running
+ * `registry.ts` with `disable`/`enable`/`rollback`/`remove` after the script,
+ * `npm run skills` with one of those, or the demo reset. Only words after the
+ * script or npm script count, so `grep remove scripts/registry.ts` passes.
  */
 const runsOperatorCommand = ({ words }: SimpleCommand): boolean => {
-  const texts = words.flatMap(forms);
-  if (texts.some((text) => DEMO_RESET.test(text))) {
-    return true;
+  const texts = words.map((word) => toPosixPath(word.value).toLowerCase());
+  const interpreterBefore = (index: number): boolean =>
+    texts.slice(0, index).some((text) => INTERPRETER.test(text));
+  const operatorAfter = (index: number): boolean =>
+    texts.slice(index + 1).some((text) => OPERATOR_COMMANDS[text] === true);
+  const scripts = texts
+    .entries()
+    .filter(
+      ([, text]) =>
+        text.endsWith(REGISTRY_SCRIPT) || text.endsWith(DEMO_RESET_SCRIPT)
+    );
+  for (const [index, text] of scripts) {
+    if (
+      interpreterBefore(index) &&
+      (text.endsWith(DEMO_RESET_SCRIPT) || operatorAfter(index))
+    ) {
+      return true;
+    }
   }
-  const registryCli =
-    texts.some((text) => text.endsWith(REGISTRY_SCRIPT)) ||
-    (texts.includes("skills") && texts.some((text) => NPM_RUN[text] === true));
-  return registryCli && texts.some((text) => OPERATOR_COMMANDS[text] === true);
+  const run = texts.findIndex(
+    (text, index) => NPM_RUN[text] === true && interpreterBefore(index)
+  );
+  if (run < 0) {
+    return false;
+  }
+  const target = texts.slice(run + 1).find((text) => !text.startsWith("-"));
+  return target === "demo:reset" || (target === "skills" && operatorAfter(run));
 };
 
 /**

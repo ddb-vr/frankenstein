@@ -39,7 +39,7 @@ to you. When the user asks for one, give the exact command to run in a normal te
   the restored version passes `run-examples`.
 - `npm run skills -- remove <name>` – deletes the skill and its registry entry; `--delete-tags` also deletes its version
   tags locally and on origin.
-- `npm run demo:reset` – removes every skill with its tags and clears `work/` and `logs/` (asks first; `-- --yes` skips
-  the question).
+- `npm run demo:reset` – removes every skill and every `skill/*@vN` tag (locally and on origin) and clears `work/` and
+  `logs/` (asks first; `-- --yes` skips the question).
 
 Mention that a new Claude Code session is needed before a disabled or enabled skill disappears or reappears.

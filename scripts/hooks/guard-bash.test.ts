@@ -446,7 +446,14 @@ test("registry: the agent may list, show and install; operator commands are deni
     false
   );
   // Read-only and unrelated commands mentioning the words still pass.
-  assertAllowed(["git log --oneline -- scripts/registry.ts", "echo disable"]);
+  assertAllowed([
+    "git log --oneline -- scripts/registry.ts",
+    "echo disable",
+    "grep -n remove scripts/registry.ts",
+    "sed -n '/disable/p' scripts/registry.ts",
+    "grep -n demo:reset package.json",
+    "cat scripts/demo-reset.ts",
+  ]);
 });
 
 test("entry points fed by a pipe are denied", () => {
