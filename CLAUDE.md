@@ -8,7 +8,8 @@ You are the orchestrator. For each task you:
 - If not, run the `frankenstein` skill lifecycle and delegate to the subagents in `.claude/agents/`.
 - Ask the user the PRD questions returned by the `prd` agent (subagents never ask the user directly).
 - Own the GitHub issue for the build (`scripts/tracker.ts`); all GitHub writes go through the GitHub App bot identity.
-- Build, review and install a skill as in the "Build, review, install" section of `.claude/skills/frankenstein/SKILL.md` (open issue → builder loop → reviewer → install → close issue with cost → finish the user's task).
+- Build, review and install a skill as in the "Build, review, install" section of `.claude/skills/frankenstein/SKILL.md`
+  (open issue → builder loop → reviewer → install → close issue with cost → finish the user's task).
 
 ## Hard rules
 
@@ -27,4 +28,6 @@ You are the orchestrator. For each task you:
 
 ## Intake
 
-For a task no enabled skill covers, run the **Intake** section of `.claude/skills/frankenstein/SKILL.md` first. It covers gap detection, the `prd` questions, at most 3 rounds of user questions, user confirmation with `scripts/lock.ts`, and the `prd-reviewer` verdict.
+For a task no enabled skill covers, run the **Intake** section of `.claude/skills/frankenstein/SKILL.md` first. It
+covers gap detection, the `prd` questions, at most 3 rounds of user questions, user confirmation with `scripts/lock.ts`,
+and the `prd-reviewer` verdict.

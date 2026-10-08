@@ -1,6 +1,7 @@
 # Ultracite Code Standards
 
-This project uses **Ultracite**, a zero-config preset that enforces strict code quality standards through automated formatting and linting.
+This project uses **Ultracite**, a zero-config preset that enforces strict code quality standards through automated
+formatting and linting.
 
 ## Quick Reference
 
@@ -14,7 +15,8 @@ Biome (the underlying engine) provides robust linting and formatting. Most issue
 
 ## Core Principles
 
-Write code that is **accessible, performant, type-safe, and maintainable**. Focus on clarity and explicit intent over brevity.
+Write code that is **accessible, performant, type-safe, and maintainable**. Focus on clarity and explicit intent over
+brevity.
 
 ### Type Safety & Explicitness
 
@@ -88,14 +90,17 @@ Write code that is **accessible, performant, type-safe, and maintainable**. Focu
 ### Framework-Specific Guidance
 
 **Next.js:**
+
 - Use Next.js `<Image>` component for images
 - Use `next/head` or App Router metadata API for head elements
 - Use Server Components for async data fetching instead of async Client Components
 
 **React 19+:**
+
 - Use ref as a prop instead of `React.forwardRef`
 
 **Solid/Svelte/Vue/Qwik:**
+
 - Use `class` and `for` attributes (not `className` or `htmlFor`)
 
 ---
@@ -120,4 +125,5 @@ Biome will catch most mechanical issues automatically. Focus your attention on:
 
 ---
 
-Most formatting and common issues are automatically fixed by Biome. Run `npx ultracite fix` before committing to ensure compliance.
+Most formatting and common issues are automatically fixed by Biome. Run `npx ultracite fix` before committing to ensure
+compliance.
