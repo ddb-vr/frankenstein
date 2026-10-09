@@ -26,8 +26,9 @@ hook deny every tool call.
 The ARES demo needs `FIXTURE_ALLOWED_DOMAINS=ares.gov.cz` (the `.env.example` default).
 
 `INPUT_ALLOWED_ROOTS` in `.env` lists the directories whose files `scripts/run-skill.ts --mount` may hand to a skill
-(comma-separated, repo-relative or absolute; empty: `demo/data,inputs`). Like the fixture allowlist, it is read only
-from `.env`. `inputs/` and the skills' output directory `out/` are gitignored.
+(comma-separated, repo-relative or absolute; empty: `demo/data,inputs,out`, so a composing skill can mount an upstream
+skill's results from `out/<dir>`). Like the fixture allowlist, it is read only from `.env`. `inputs/` and the skills'
+output directory `out/` are gitignored.
 
 ## Tracker backends
 

@@ -4,7 +4,8 @@
 //
 // - A mount must exist and resolve (symlinks resolved) inside one of the
 //   allowed roots: `INPUT_ALLOWED_ROOTS` from `.env` (comma-separated,
-//   repo-relative or absolute), default `demo/data,inputs`.
+//   repo-relative or absolute), default `demo/data,inputs,out` (`out` so a
+//   skill can consume another skill's output).
 // - Always denied, even inside an allowed root: `.env*`, `*.pem`, `.git`,
 //   `.claude` (anywhere in the path or inside a mounted directory), the repo's
 //   `scripts/` and `work/.locks/`, and the home directory (or an ancestor).
@@ -28,7 +29,11 @@ import path from "node:path";
 import { parseEnv } from "node:util";
 
 export const ALLOWED_ROOTS_ENV = "INPUT_ALLOWED_ROOTS";
-export const DEFAULT_ALLOWED_ROOTS: readonly string[] = ["demo/data", "inputs"];
+export const DEFAULT_ALLOWED_ROOTS: readonly string[] = [
+  "demo/data",
+  "inputs",
+  "out",
+];
 export const OUTPUT_ROOT = "out";
 /** Prefix of every policy error, so the audit can recognize them. */
 export const MOUNT_DENIED = /^(mount|output) denied: /;

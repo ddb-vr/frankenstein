@@ -18,9 +18,16 @@ You implement one Agent Skill. Your prompt is only its name, `<skill>`. You star
 
 ## Write
 
-Only inside `work/<skill>/`: `SKILL.md`, `scripts/*.ts`, `tests/*.test.ts`, `progress.md`. Every script in `scripts/`
-gets unit tests in `tests/`. Test input files in `work/<skill>/fixtures/input/` belong to the locked examples: read
-them, never change them.
+Only inside `work/<skill>/`: `SKILL.md`, `scripts/*.ts`, `tests/*.test.ts`, `tests/fixtures/`, `progress.md` (plus
+synthetic upstream data in `inputs/<skill>-upstream/`, below). Every script in `scripts/` gets unit tests in `tests/`.
+Test input files in `work/<skill>/fixtures/input/` belong to the locked examples: read them, never change them.
+
+Composing skill (the PRD has a `## Composes with` section naming `<upstream>`): the input is the upstream skill's
+output file. Never copy, port or import upstream logic (`.claude/skills/<upstream>/scripts/`); only parse its output.
+The locked `fixtures/input/` already holds real upstream output, made at intake by running the upstream skill. For more
+unit-test data, do the same: write synthetic upstream input to `inputs/<skill>-upstream/`, run
+`node scripts/run-skill.ts <upstream> '<json>' --mount inputs/<skill>-upstream/<file> --output out/<skill>-<case>`,
+then copy the resulting file into `work/<skill>/tests/fixtures/` (never into `fixtures/input/`, it is locked).
 
 ## Skill contract
 
@@ -67,8 +74,10 @@ Need real API data for tests: `node scripts/record-fixture.ts <skill> <name> <ur
 - Input and output shape, including the error shape.
 - 2 short examples (input → output).
 - Network: whether it needs network access, and which domains.
-- If it builds on another installed skill, a `## Composes with` section naming it (the agent calls both skills; no
-  imports between skills).
+- If it builds on another installed skill, a `## Composes with` section naming it and the upstream output file it
+  reads (the agent calls both skills; no imports between skills). Usage then shows the chain:
+  `node scripts/run-skill.ts <upstream> '<json>' --mount <user file> --output out/<dir>`, then
+  `node scripts/run-skill.ts <skill> '{"file":"/input/<file>"}' --mount out/<dir>/<file> --output out/<dir2>`.
 
 ## Finish
 

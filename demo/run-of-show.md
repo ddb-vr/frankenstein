@@ -12,13 +12,8 @@ Pitch line: **"Your bank data never passes through the model and never leaves a 
 3. `npm run demo:reset -- --yes` (removes all skills and their tags, clears `work/` and `logs/`), then delete old
    results: `rm -rf out/*` (on Windows: `Remove-Item out\* -Recurse`).
 4. `npm run skills -- list` shows no skills; `git status` is clean.
-5. Session 2 needs the payment results of session 1. `out/` is not an allowed mount root, so by default the agent asks
-   you to copy a file into `inputs/` (see [answers.md](answers.md#if-the-agent-asks-to-copy-a-file)). Decide after
-   the dress rehearsal: keep the copy (honest, cut it short in the edit) or put
-   `INPUT_ALLOWED_ROOTS=demo/data,inputs,out`
-   into `.env` before recording.
-6. Terminal font large (≥ 16 pt), dark theme, notifications off, window 1920×1080.
-7. Browser tab with the repo's issues filtered by the `skill-build` label, logged out or in a clean profile.
+5. Terminal font large (≥ 16 pt), dark theme, notifications off, window 1920×1080.
+6. Browser tab with the repo's issues filtered by the `skill-build` label, logged out or in a clean profile.
 
 ## Screen layout
 

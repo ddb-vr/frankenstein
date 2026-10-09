@@ -27,7 +27,7 @@ node scripts/run-skill.ts <name> --input-file <file> [--mount <path>]... [--outp
 
 Path policy, enforced in code (not only in the guard):
 
-- Allowed roots from env `INPUT_ALLOWED_ROOTS` (comma-separated, default `demo/data,inputs`); every `--mount` path must
+- Allowed roots from env `INPUT_ALLOWED_ROOTS` (comma-separated, default `demo/data,inputs,out`); every `--mount` path must
   resolve (after `realpath`, so symlinks cannot escape) inside one of them and exist.
 - Always denied, even inside allowed roots: `.env*`, `*.pem`, `.git`, `.claude`, `scripts`, `work/.locks`, the user's
   home directory itself.

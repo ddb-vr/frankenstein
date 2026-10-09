@@ -28,6 +28,11 @@ Then run `node scripts/run-examples.ts work/<skill>` once.
 - `SKILL.md` `description` says precisely what the skill does and when to use it, so a fresh session finds it; usage,
   input/output shape, examples and network requirement are accurate.
 - Scope matches the PRD: nothing extra, nothing missing.
+- Composition: when the PRD has a `## Composes with` section naming `<upstream>` (or the skill's job overlaps an
+  enabled skill in `registry.json`), reject any logic duplicated from the upstream skill (compare with
+  `.claude/skills/<upstream>/scripts/`): the skill must only parse the upstream output file. `SKILL.md` must have a
+  `## Composes with` section naming the upstream skill and showing the chain (upstream with `--output out/<dir>`,
+  then this skill with `--mount out/<dir>/<file>`).
 
 A failing runner summary is always a reject, including a failing `lint` stage (repo Biome rules or type errors; the
 builder fixes it with `node scripts/fix-skill.ts <skill>` plus hand edits).

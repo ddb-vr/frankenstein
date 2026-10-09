@@ -23,7 +23,7 @@ import {
 
 // `assert.throws` matches a RegExp against `Error: <message>`: no `^` anchor.
 const OUTSIDE_ROOTS =
-  /mount denied: .+: it is outside the allowed roots \(demo\/data, inputs; INPUT_ALLOWED_ROOTS in \.env\)/;
+  /mount denied: .+: it is outside the allowed roots \(demo\/data, inputs, out; INPUT_ALLOWED_ROOTS in \.env\)/;
 const AFTER_SYMLINKS = /after resolving symlinks to /;
 const NEVER_MOUNTED =
   /mount denied: .+ never mounted \(\.env\*, \*\.pem, \.git, \.claude\)$/;
@@ -90,6 +90,28 @@ test("a mount inside an allowed root resolves to its absolute path", (t) => {
     path.join(root, "inputs", "invoices")
   );
   assert.throws(() => checkMount("inputs/missing.csv", policy), MISSING);
+});
+
+test("another skill's output in out/ can be mounted, under the same deny list", (t) => {
+  const { file, policy, root } = scratchRepo(t);
+  const summary = file("out/upstream/summary.json");
+  assert.equal(checkMount("out/upstream/summary.json", policy), summary);
+  assert.equal(
+    checkMount("out/upstream", policy),
+    path.join(root, "out", "upstream")
+  );
+  file("out/leak/.env", "SECRET=1");
+  assert.throws(() => checkMount("out/leak/.env", policy), NEVER_MOUNTED);
+  assert.throws(() => checkMount("out/leak", policy), CONTAINS);
+  symlinkSync(
+    path.join(root, "secret.csv"),
+    path.join(root, "out", "upstream", "linked.csv"),
+    "file"
+  );
+  assert.throws(
+    () => checkMount("out/upstream/linked.csv", policy),
+    AFTER_SYMLINKS
+  );
 });
 
 test("a mount outside the allowed roots is denied, also through a symlink", (t) => {
@@ -275,6 +297,7 @@ test("allowed roots come from INPUT_ALLOWED_ROOTS in .env only", (t) => {
   assert.deepEqual(allowedRootsFrom(" , ", root), [
     path.join(root, "demo", "data"),
     path.join(root, "inputs"),
+    path.join(root, "out"),
   ]);
   assert.deepEqual(allowedRootsFrom("data, /srv/exports", root), [
     path.join(root, "data"),

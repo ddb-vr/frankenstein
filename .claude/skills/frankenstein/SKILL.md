@@ -27,7 +27,7 @@ node scripts/run-skill.ts <skill> '{"statement":"/input/bank.csv"}' --mount demo
 ```
 
 - `--mount <path>` (repeatable) mounts a file or directory read-only at `/input/<basename>`; put those paths in the
-  JSON input. Paths must lie inside `INPUT_ALLOWED_ROOTS` (default `demo/data`, `inputs`). On `mount denied: …`:
+  JSON input. Paths must lie inside `INPUT_ALLOWED_ROOTS` (default `demo/data`, `inputs`, `out`). On `mount denied: …`:
   - secrets (`.env*`, `*.pem`), `.git`, `.claude`, the repo's `scripts/` or `work/.locks/`, the home directory: final,
     never work around it.
   - outside the allowed roots: ask the user to copy the file into an allowed root (`inputs/` by default, or a directory
@@ -52,7 +52,8 @@ answers. Nothing is locked until the last step, so every loop back to **Write** 
    If an enabled skill covers the task, run it with `node scripts/run-skill.ts <skill> '<json>'` (JSON input as the
    argument; for large inputs write it to a file and use `--input-file <path>` instead; user files via `--mount`, see
    [User files](#user-files)) and stop here. Otherwise tell the user in one line which capability is missing, then
-   continue.
+   continue. If an enabled skill covers **part** of the task, it is the **upstream** skill: the new skill consumes its
+   output file and never re-implements it. Pass its name to every `prd-writer` call.
 2. **Questions.** Delegate to the `prd-writer` agent with `mode: questions`. Pass the user's request verbatim, all
    answers so far, the round number and the paths of any user files involved.
 3. **Grill me.** Follow the `grill-me` skill (`.claude/skills/grill-me/SKILL.md`): plain words in the user's language,
@@ -67,9 +68,16 @@ answers. Nothing is locked until the last step, so every loop back to **Write** 
 - If the request is already precise (`prd-writer` returns "No questions"), skip the grilling. Ask a single
   confirmation of its assumptions instead.
 
-4. **Write.** Delegate to `prd-writer` with `mode: write`. Pass the request, every question with its answer, the paths
-   of any user files involved, and any corrections or reviewer reasons. On a rewrite, also pass the skill name so it
-   stays the same.
+4. **Write.** With an upstream skill, first get its real output format:
+   - Delegate to `prd-writer` with `mode: upstream` and the upstream skill name. It writes synthetic upstream input to
+     `inputs/<skill>-upstream/` and returns the `run-skill.ts` command.
+   - Run that command (`node scripts/run-skill.ts <upstream> '<json>' --mount inputs/<skill>-upstream/<file> --output
+     out/<skill>-upstream`), then copy the output file it names into `work/<skill>/fixtures/input/` (create the
+     directory). Content is synthetic: the copy is the new skill's test input, locked with the examples.
+
+   Then delegate to `prd-writer` with `mode: write`. Pass the request, every question with its answer, the paths of any
+   user files involved, the upstream skill name and the copied fixture file(s), and any corrections or reviewer reasons.
+   Pass the skill name whenever one is already picked (by `mode: upstream` or on a rewrite) so it stays the same.
 5. **PRD review.** Delegate to `prd-reviewer` with the skill name. Read the fenced `verdict` block.
 
 - `approve`: continue with step 6.
@@ -114,6 +122,9 @@ action, follow its reason.
 7. **Finish the user's task** – use the new skill via `node scripts/run-skill.ts <skill> '<json>'` (or
    `--input-file <path>` for large inputs; user files with `--mount`, results with `--output out/<run>`, see
    [User files](#user-files)), answer the user's original request and report the run cost (`totalUsd` from step 6).
+   A skill with a `## Composes with` section is a chain: first run the upstream skill on the user's data with
+   `--output out/<dir>`, then the new skill with `--mount out/<dir>/<file>` (its `/input/<file>` path in the JSON
+   input), as its SKILL.md usage shows.
 
 **Blocked** – the budget or iteration hook denies, the post-reject builder call does not return `pass`, the second
 review rejects, the builder returns `impossible`, or install returns `"installed": false`: run
