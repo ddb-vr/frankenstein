@@ -85,9 +85,6 @@ npm run skills -- rollback <name>   # back to the previous version
 npm run skills -- disable <name>    # put it back in the lab
 ```
 
-> 🧬 **Living proof:** [`ico-validator`](.claude/skills/ico-validator/SKILL.md), a Czech company ID checker,
-> was built, tested, reviewed and installed by Frankenstein itself (issue #7).
-
 ## 📚 Want the gory details?
 
 All the internals (skill contract, hook rules, audit, registry and known limitations) are in
