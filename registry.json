@@ -21,7 +21,31 @@
     },
     {
       "enabled": true,
+      "examplesHash": "9a3a52981070aa7debdd7ff2b9f4a23e9a8fca449920be9b43563e521dc6ab21",
+      "history": [
+        {
+          "action": "install",
+          "at": "2026-10-09T01:04:24.339Z",
+          "commit": "f4910da0804aa9bf7827d9a41923b7d122df7a1f",
+          "costUsd": 1.132721,
+          "issue": 13,
+          "version": "v1"
+        }
+      ],
+      "installedAt": "2026-10-09T01:04:24.339Z",
+      "issue": 13,
+      "name": "orders-lapsed-customers",
+      "network": false,
+      "version": "v1"
+    },
+    {
+      "enabled": true,
       "examplesHash": "0aaabd865d813b4098c2341adae0406214941e8ab2656d7025b0bf97c23dbda9",
+      "installedAt": "2026-10-09T00:53:09.120Z",
+      "issue": 12,
+      "name": "orders-repeat-customers",
+      "network": false,
+      "version": "v1",
       "history": [
         {
           "action": "install",
@@ -31,12 +55,7 @@
           "issue": 12,
           "version": "v1"
         }
-      ],
-      "installedAt": "2026-10-09T00:53:09.120Z",
-      "issue": 12,
-      "name": "orders-repeat-customers",
-      "network": false,
-      "version": "v1"
+      ]
     }
   ]
 }

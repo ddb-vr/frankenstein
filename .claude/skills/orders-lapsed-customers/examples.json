@@ -1,0 +1,152 @@
+{
+  "skill": "orders-lapsed-customers",
+  "entry": "scripts/main.ts",
+  "examples": [
+    {
+      "name": "normal-60-days",
+      "input": {
+        "file": "/skill/fixtures/input/orders.csv",
+        "reference_date": "2026-10-09",
+        "days": 60
+      },
+      "expected": {
+        "lapsed_customers": 3,
+        "total_spend_czk": 4150.5,
+        "orders_skipped": 3,
+        "top_lapsed_customers": [
+          {
+            "name": "Anna Testová",
+            "email": "anna@example.com",
+            "last_purchase": "2026-07-15",
+            "orders": 3,
+            "total_czk": 3250.5
+          },
+          {
+            "name": "Ben Novák",
+            "email": "ben@example.com",
+            "last_purchase": "2026-08-09",
+            "orders": 1,
+            "total_czk": 500
+          },
+          {
+            "name": "Filip Černý",
+            "email": "filip@example.com",
+            "last_purchase": "2026-02-02",
+            "orders": 1,
+            "total_czk": 400
+          }
+        ],
+        "output_file": "lapsed-customers.csv"
+      },
+      "match": "exact"
+    },
+    {
+      "name": "shorter-window-30-days",
+      "input": {
+        "file": "/skill/fixtures/input/orders.csv",
+        "reference_date": "2026-10-09",
+        "days": 30
+      },
+      "expected": { "lapsed_customers": 4, "total_spend_czk": 4850.5 },
+      "match": "subset"
+    },
+    {
+      "name": "top-five-limit",
+      "input": {
+        "file": "/skill/fixtures/input/orders-many-lapsed.csv",
+        "reference_date": "2026-10-09",
+        "days": 60
+      },
+      "expected": {
+        "lapsed_customers": 6,
+        "total_spend_czk": 2100,
+        "orders_skipped": 0,
+        "top_lapsed_customers": [
+          {
+            "name": "Uživatel Šest",
+            "email": "u6@example.com",
+            "last_purchase": "2026-01-06",
+            "orders": 1,
+            "total_czk": 600
+          },
+          {
+            "name": "Uživatel Pět",
+            "email": "u5@example.com",
+            "last_purchase": "2026-01-05",
+            "orders": 1,
+            "total_czk": 500
+          },
+          {
+            "name": "Uživatel Čtyři",
+            "email": "u4@example.com",
+            "last_purchase": "2026-01-04",
+            "orders": 1,
+            "total_czk": 400
+          },
+          {
+            "name": "Uživatel Tři",
+            "email": "u3@example.com",
+            "last_purchase": "2026-01-03",
+            "orders": 1,
+            "total_czk": 300
+          },
+          {
+            "name": "Uživatel Dva",
+            "email": "u2@example.com",
+            "last_purchase": "2026-01-02",
+            "orders": 1,
+            "total_czk": 200
+          }
+        ],
+        "output_file": "lapsed-customers.csv"
+      },
+      "match": "exact"
+    },
+    {
+      "name": "no-lapsed-customers",
+      "input": {
+        "file": "/skill/fixtures/input/orders-none-lapsed.csv",
+        "reference_date": "2026-10-09",
+        "days": 60
+      },
+      "expected": {
+        "lapsed_customers": 0,
+        "total_spend_czk": 0,
+        "orders_skipped": 0,
+        "top_lapsed_customers": [],
+        "output_file": null
+      },
+      "match": "exact"
+    },
+    {
+      "name": "error-missing-column",
+      "input": {
+        "file": "/skill/fixtures/input/orders-missing-column.csv",
+        "reference_date": "2026-10-09",
+        "days": 60
+      },
+      "expected": { "error": true },
+      "match": "exact"
+    },
+    {
+      "name": "error-file-not-found",
+      "input": {
+        "file": "/skill/fixtures/input/does-not-exist.csv",
+        "reference_date": "2026-10-09",
+        "days": 60
+      },
+      "expected": { "error": true },
+      "match": "exact"
+    },
+    {
+      "name": "error-invalid-reference-date",
+      "input": {
+        "file": "/skill/fixtures/input/orders.csv",
+        "reference_date": "2026-13-45",
+        "days": 60
+      },
+      "expected": { "error": true },
+      "match": "exact"
+    }
+  ]
+}
