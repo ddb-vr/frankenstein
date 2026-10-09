@@ -1,7 +1,7 @@
 {
   "skills": [
     {
-      "enabled": true,
+      "enabled": false,
       "examplesHash": "5661a3ab20e5c518fde60be2e35ed520760234ad7f58687be7e8ea7fd7ffb346",
       "installedAt": "2026-10-08T21:48:09.822Z",
       "issue": 7,
@@ -16,12 +16,25 @@
           "costUsd": null,
           "issue": 7,
           "version": "v1"
+        },
+        {
+          "action": "disable",
+          "at": "2026-10-09T01:09:18.514Z",
+          "commit": "eb861c0647be32cd0dea1e3c729325a6a52cd594",
+          "costUsd": 0,
+          "issue": 7,
+          "version": "v1"
         }
       ]
     },
     {
       "enabled": true,
       "examplesHash": "9a3a52981070aa7debdd7ff2b9f4a23e9a8fca449920be9b43563e521dc6ab21",
+      "installedAt": "2026-10-09T01:04:24.339Z",
+      "issue": 13,
+      "name": "orders-lapsed-customers",
+      "network": false,
+      "version": "v1",
       "history": [
         {
           "action": "install",
@@ -31,12 +44,7 @@
           "issue": 13,
           "version": "v1"
         }
-      ],
-      "installedAt": "2026-10-09T01:04:24.339Z",
-      "issue": 13,
-      "name": "orders-lapsed-customers",
-      "network": false,
-      "version": "v1"
+      ]
     },
     {
       "enabled": true,
