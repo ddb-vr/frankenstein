@@ -99,7 +99,7 @@ export const formatDoneComment = (
     "",
     "error" in audit
       ? `**Sandbox audit:** unavailable (${audit.error})`
-      : `**Sandbox audit:** sandbox runs ${audit.sandboxRuns}, host executions ${audit.hostExecutions}, denials ${audit.denials}`
+      : `**Sandbox audit:** sandbox runs ${audit.sandboxRuns}, host executions ${audit.hostExecutions}, denials ${audit.denials}, denied mounts ${audit.deniedMounts.length}`
   );
   return `${lines.join("\n")}\n`;
 };

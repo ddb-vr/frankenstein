@@ -1,17 +1,25 @@
 // Wrapper around `docker run` for the `frankenstein-sandbox` image with
 // isolation flags (no network, read-only root, resource limits, non-root user).
-// Host environment is never forwarded; only the skill directory is mounted,
+// Host environment is never forwarded. Mounted: the skill directory read-only
+// at /skill, optional input files or directories read-only at
+// /input/<basename> and an optional output directory read-write at /output;
 // never the repo root, the home directory or an ancestor of either.
 
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { SKILL_NAME } from "./lib/examples.ts";
 
 export const SANDBOX_IMAGE = "frankenstein-sandbox";
 export const SKILL_MOUNT = "/skill";
+export const INPUT_MOUNT = "/input";
+export const OUTPUT_MOUNT = "/output";
+/** One `mount: <host> -> <container> (ro|rw)` line of a run record. */
+export const MOUNT_RECORD = /^mount: (.+) -> (\/\S*) \((ro|rw)\)$/;
+/** `-v` value: host path (may contain `:` on Windows), container path, mode. */
+const VOLUME_SPEC = /^(.+):(\/[^:]*):(ro|rw)$/;
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 /** Repo-relative directories whose direct children are skill directories. */
 const SKILL_ROOTS: readonly string[] = [
@@ -64,8 +72,8 @@ const realPathOrSelf = (dir: string): string => {
 };
 
 /** Refuses the repo root, the home directory and any ancestor of either. */
-const mountSource = (skillDir: string): string => {
-  const source = path.resolve(skillDir);
+const mountSource = (hostPath: string): string => {
+  const source = path.resolve(hostPath);
   for (const dir of [REPO_ROOT, homedir()]) {
     for (const protectedDir of [dir, realPathOrSelf(dir)]) {
       const relative = path.relative(source, protectedDir);
@@ -88,13 +96,21 @@ export interface SandboxOptions {
   command: string[];
   /** Extra env vars; the only ones besides `FRANKENSTEIN_MODE` (`testMode`). */
   env?: Record<string, string>;
+  /**
+   * Host files or directories, each mounted read-only at `/input/<basename>`
+   * (basename of the path as given; symlinks are resolved for the source).
+   * Two mounts with the same basename are an error.
+   */
+  mounts?: string[];
   /** Allow network access. Default `false` (`--network none`). */
   network?: boolean;
   /**
    * Receives one record per run, also when docker fails: container name,
-   * docker argv (env values redacted), exit code and duration.
+   * docker argv (env values redacted), exit code, duration and mounts.
    */
   onRunLog?: (record: string) => void;
+  /** Host directory mounted read-write at `/output`. */
+  outputDir?: string;
   skillDir: string;
   stdin?: string;
   /**
@@ -115,6 +131,56 @@ export interface SandboxResult {
 
 export const newContainerName = (): string =>
   `frk-${randomBytes(6).toString("hex")}`;
+
+export interface Mount {
+  container: string;
+  host: string;
+  readOnly: boolean;
+}
+
+/**
+ * Every bind mount of a run, skill directory first. Sources are absolute and
+ * pass the same repo-root / home-directory refusal as the skill directory.
+ */
+export const sandboxMounts = (
+  options: Pick<SandboxOptions, "mounts" | "outputDir" | "skillDir">
+): Mount[] => {
+  const mounts: Mount[] = [
+    {
+      container: SKILL_MOUNT,
+      host: mountSource(options.skillDir),
+      readOnly: true,
+    },
+  ];
+  const byName = new Map<string, string>();
+  for (const given of options.mounts ?? []) {
+    const absolute = path.resolve(given);
+    const name = path.basename(absolute);
+    if (name === "" || name.includes(":")) {
+      throw new Error(`cannot mount ${given}: no usable file name`);
+    }
+    const previous = byName.get(name);
+    if (previous !== undefined) {
+      throw new Error(
+        `mount name collision: ${previous} and ${given} would both be ${INPUT_MOUNT}/${name}`
+      );
+    }
+    byName.set(name, given);
+    mounts.push({
+      container: `${INPUT_MOUNT}/${name}`,
+      host: mountSource(realPathOrSelf(absolute)),
+      readOnly: true,
+    });
+  }
+  if (options.outputDir !== undefined) {
+    mounts.push({
+      container: OUTPUT_MOUNT,
+      host: mountSource(realPathOrSelf(path.resolve(options.outputDir))),
+      readOnly: false,
+    });
+  }
+  return mounts;
+};
 
 export const buildDockerArgs = (
   options: SandboxOptions,
@@ -152,8 +218,10 @@ export const buildDockerArgs = (
     "512m",
     "--user",
     "node",
-    "-v",
-    `${mountSource(options.skillDir)}:${SKILL_MOUNT}:ro`,
+    ...sandboxMounts(options).flatMap(({ container, host, readOnly }) => [
+      "-v",
+      `${host}:${container}:${readOnly ? "ro" : "rw"}`,
+    ]),
     ...envArgs,
     SANDBOX_IMAGE,
     ...options.command,
@@ -184,16 +252,49 @@ export interface RunRecord {
   timedOut: boolean;
 }
 
-/** Two log lines proving a sandbox run: what was started and how it ended. */
+/** The `-v` mounts of a docker argv, one `mount:` line each. */
+const mountLines = (args: readonly string[]): string[] =>
+  args.flatMap((arg, index) => {
+    const spec = args[index - 1] === "-v" ? VOLUME_SPEC.exec(arg) : null;
+    return spec ? [`mount: ${spec[1]} -> ${spec[2]} (${spec[3]})`] : [];
+  });
+
+/**
+ * Log lines proving a sandbox run: what was started, how it ended and every
+ * mount (host path -> container path, ro/rw).
+ */
 export const formatRunRecord = (record: RunRecord): string =>
   [
     `sandbox: container=${record.containerName} exit=${record.exitCode ?? "none"} durationMs=${record.durationMs}${record.timedOut ? " TIMED OUT" : ""}`,
     `docker argv: ${JSON.stringify(["docker", ...redactDockerArgs(record.args)])}`,
+    ...mountLines(record.args.slice(0, record.args.indexOf(SANDBOX_IMAGE))),
   ].join("\n");
+
+/**
+ * Docker would create a missing bind source as an empty root-owned
+ * directory, so every input must exist and the output must be a directory.
+ */
+const assertMountSources = (
+  options: Pick<SandboxOptions, "mounts" | "outputDir">
+): void => {
+  for (const mount of options.mounts ?? []) {
+    if (statSync(mount, { throwIfNoEntry: false }) === undefined) {
+      throw new Error(`mount source not found: ${mount}`);
+    }
+  }
+  const { outputDir } = options;
+  if (
+    outputDir !== undefined &&
+    statSync(outputDir, { throwIfNoEntry: false })?.isDirectory() !== true
+  ) {
+    throw new Error(`output directory not found: ${outputDir}`);
+  }
+};
 
 export const runInSandbox = (
   options: SandboxOptions
 ): Promise<SandboxResult> => {
+  assertMountSources(options);
   const containerName = newContainerName();
   const args = buildDockerArgs(
     { ...options, skillDir: resolveSkillDir(options.skillDir) },

@@ -17,6 +17,11 @@ You are the orchestrator. For each task you:
 - No install into `.claude/skills/` without passing tests and reviewer approval.
 - Caps (builder iterations, USD per run) are enforced in code by hooks, not by prompt.
 - After any hook denial, do not retry the same action: follow the reason in the denial.
+- **Do not read user data files into context** (bank statements, invoices, exports). Pass them to the skill with
+  `node scripts/run-skill.ts <skill> '<json>' --mount <path> [--output out/<dir>]`, with the `/input/<basename>` paths
+  in the JSON input; answer from the skill's compact summary and point the user to the files in `out/<dir>`. Mounts
+  must lie inside `INPUT_ALLOWED_ROOTS` (default `demo/data`, `inputs`); a refused path is final. Only the `prd`
+  subagent may look at the first few lines of a file, to learn its format (headers, separator, encoding).
 
 ## Repo conventions
 

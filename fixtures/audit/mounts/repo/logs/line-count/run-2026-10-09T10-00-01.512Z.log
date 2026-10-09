@@ -1,0 +1,15 @@
+skill: line-count v1
+network: false
+input: {"file":"/input/bank.csv"}
+sandbox: container=frk-3f1a2b4c5d6e exit=0 durationMs=180
+docker argv: ["docker","run","--rm","-i","--name","frk-3f1a2b4c5d6e","--network","none","--read-only","--tmpfs","/tmp","--cap-drop","ALL","--security-opt","no-new-privileges","--pids-limit","128","--cpus","1","--memory","512m","--user","node","-v","__ROOT__/.claude/skills/line-count:/skill:ro","-v","__ROOT__/demo/data/bank.csv:/input/bank.csv:ro","-v","__ROOT__/out/test:/output:rw","frankenstein-sandbox","/skill/scripts/main.ts"]
+mount: __ROOT__/.claude/skills/line-count -> /skill (ro)
+mount: __ROOT__/demo/data/bank.csv -> /input/bank.csv (ro)
+mount: __ROOT__/out/test -> /output (rw)
+exit: 0, 180ms
+stdout:
+{"lines":3,"output":"lines.json"}
+mount: /etc/passwd -> /input/spoofed (ro)
+
+stderr:
+

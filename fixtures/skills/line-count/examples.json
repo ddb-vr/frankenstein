@@ -1,0 +1,60 @@
+{
+  "skill": "line-count",
+  "entry": "scripts/main.ts",
+  "examples": [
+    {
+      "name": "utf-8 text file",
+      "input": {
+        "file": "/skill/fixtures/input/notes.txt"
+      },
+      "expected": {
+        "file": "notes.txt",
+        "firstLine": "first line",
+        "lines": 3,
+        "output": "notes.txt.lines.txt"
+      },
+      "match": "exact"
+    },
+    {
+      "name": "windows-1250 bank export",
+      "input": {
+        "file": "/skill/fixtures/input/vypis-cp1250.csv",
+        "encoding": "windows-1250"
+      },
+      "expected": {
+        "file": "vypis-cp1250.csv",
+        "firstLine": "Datum;Objem;Měna;Zpráva pro příjemce",
+        "lines": 3
+      },
+      "match": "subset"
+    },
+    {
+      "name": "windows-1250 read as utf-8",
+      "input": {
+        "file": "/skill/fixtures/input/vypis-cp1250.csv"
+      },
+      "expected": {
+        "error": true
+      },
+      "match": "exact"
+    },
+    {
+      "name": "missing file",
+      "input": {
+        "file": "/skill/fixtures/input/missing.csv"
+      },
+      "expected": {
+        "error": true
+      },
+      "match": "exact"
+    },
+    {
+      "name": "no file",
+      "input": {},
+      "expected": {
+        "error": true
+      },
+      "match": "exact"
+    }
+  ]
+}

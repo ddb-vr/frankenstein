@@ -16,6 +16,7 @@ const DISABLED_PROTECTED =
   /\.claude\/disabled-skills is protected; skills are disabled and enabled only by the user/;
 const HOOK_FAILED = /hook guard-files\.ts failed/;
 const THROUGH_SYMLINK = /resolves to .* through a symlink/;
+const OUT_PROTECTED = /out is protected; only skills write there/;
 
 /** Without symlinks: paths resolve to themselves. */
 const context = (
@@ -90,6 +91,23 @@ test("lock files, installed skills, settings, scripts and registry are protected
     "/repo/README.md",
     "/tmp/scripts/x.ts",
   ]) {
+    assert.equal(checkFileWrite(write(file), context()), undefined, file);
+  }
+});
+
+test("skill output in out/ is written only from the sandbox", () => {
+  for (const file of [
+    "/repo/out/test/summary.json",
+    "/repo/out",
+    "work/csv-sum/../../Out/report.csv",
+  ]) {
+    assert.match(
+      checkFileWrite(write(file), context()) ?? "allowed",
+      OUT_PROTECTED,
+      file
+    );
+  }
+  for (const file of ["/repo/outputs/x.csv", "/repo/work/csv-sum/out/x"]) {
     assert.equal(checkFileWrite(write(file), context()), undefined, file);
   }
 });

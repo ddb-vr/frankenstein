@@ -56,6 +56,7 @@ closed.
 | 🧷 Rule                                                   | ⚙️ How it's enforced                                                                 |
 |-----------------------------------------------------------|--------------------------------------------------------------------------------------|
 | Generated code never runs on your machine                 | Shell guard blocks interpreters and other ways to run skill code outside the sandbox |
+| Your files never pass through the model                   | Mounted read-only into the sandbox (offline unless the skill needs a listed API); the skill gets only paths, secrets are refused |
 | Locked examples stay locked                               | sha256 lock and a file guard                                                         |
 | No install without green tests **and** an approve verdict | The install script re-checks the lock hash, the review and a fresh test run          |
 | Budget can't run away                                     | Caps on builder iterations and USD spend per run                                     |

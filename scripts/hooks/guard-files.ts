@@ -1,7 +1,7 @@
 // PreToolUse hook (matcher `Write|Edit|MultiEdit|NotebookEdit`): blocks file
 // tool writes to locked acceptance examples, review verdicts (written only by
 // `capture-review.ts`), lock files, run state, installed and disabled skills, Claude
-// settings, repo scripts and the registry. The target is matched both as
+// settings, repo scripts, the registry and skill output in `out/`. The target is matched both as
 // given and with symlinks resolved, so a link (`work/x/self -> .`) cannot
 // redirect a write into a protected path.
 
@@ -50,6 +50,11 @@ const PROTECTED: readonly { entry: string; reason: string }[] = [
   {
     entry: "registry.json",
     reason: "the registry is updated only by `node scripts/registry.ts`",
+  },
+  {
+    entry: "out",
+    reason:
+      "only skills write there, from the sandbox (`node scripts/run-skill.ts <skill> … --output out/<dir>`); point the user to the files instead",
   },
 ];
 

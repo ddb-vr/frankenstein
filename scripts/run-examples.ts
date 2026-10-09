@@ -7,15 +7,22 @@
 // without a summary on a usage error or when <skillDir> is not work/<skill>,
 // fixtures/skills/<skill> or .claude/skills/<skill> (see `resolveSkillDir`).
 // Full output: logs/<skill>/<timestamp>.log; one line per result: logs/<skill>/latest.log.
+//
+// Input files of examples are part of the skill (`fixtures/input/…`, referenced
+// as `/skill/fixtures/input/<file>`). Every example gets a fresh temp
+// directory as `/output`, deleted afterwards; only stdout is compared.
 
 import {
   appendFileSync,
   globSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   type ExamplesFile,
@@ -169,6 +176,21 @@ export const findUnitTests = (skillDir: string): string[] | undefined => {
   return hasTestsDir ? globSync(UNIT_TEST_GLOB, { cwd: skillDir }) : undefined;
 };
 
+/**
+ * Calls `use` with a fresh temp directory (the example's `/output`) and
+ * deletes it afterwards, also when `use` fails.
+ */
+export const withOutputDir = async <T>(
+  use: (outputDir: string) => Promise<T>
+): Promise<T> => {
+  const outputDir = mkdtempSync(path.join(tmpdir(), "frk-output-"));
+  try {
+    return await use(outputDir);
+  } finally {
+    rmSync(outputDir, { force: true, recursive: true });
+  }
+};
+
 const runUnitTests = async (
   skillDir: string,
   log: Logger
@@ -244,12 +266,15 @@ const run = async (skillDir: string, log: Logger): Promise<Summary> => {
   let passed = 0;
   for (const example of examples) {
     // biome-ignore lint/performance/noAwaitInLoops: sequential keeps the live log ordered and bounds sandbox load.
-    const result = await runInSandbox({
-      command: [`${SKILL_MOUNT}/${entry}`],
-      onRunLog: log.detail,
-      skillDir,
-      stdin: JSON.stringify(example.input),
-    });
+    const result = await withOutputDir((outputDir) =>
+      runInSandbox({
+        command: [`${SKILL_MOUNT}/${entry}`],
+        onRunLog: log.detail,
+        outputDir,
+        skillDir,
+        stdin: JSON.stringify(example.input),
+      })
+    );
     const match: MatchResult = result.timedOut
       ? { actual: result.stdout, pass: false, reason: "timed out" }
       : matchExample(example, result);

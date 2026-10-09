@@ -34,7 +34,9 @@ const NO_ACTIVE_RUN = /no active run/;
 const CLEAN_AUDIT = {
   bashCommands: 10,
   denials: 0,
+  deniedMounts: [],
   hostExecutions: 0,
+  mounts: [],
   sandboxRuns: 28,
   session: "de781ccc-a467-4f65-a0af-77fa32bc81c4",
   violations: [],
@@ -108,7 +110,11 @@ test("formatDoneComment renders summary, version, cost table and audit", () => {
   const comment = formatDoneComment(
     "Built pdf-merge.",
     computeCost(SAMPLE_USAGE),
-    { ...CLEAN_AUDIT, denials: 3 },
+    {
+      ...CLEAN_AUDIT,
+      denials: 3,
+      deniedMounts: [{ command: "x", reason: "mount denied: x: y" }],
+    },
     "v2"
   );
   assert.equal(
@@ -128,7 +134,7 @@ test("formatDoneComment renders summary, version, cost table and audit", () => {
       "| `claude-sonnet-5-5` | 500,000 | 0 | 1,000,000 | 50,000 | $1.6000 |",
       "| **Total** | 1,500,000 | 200,000 | 3,000,000 | 250,000 | **$11.0000** |",
       "",
-      "**Sandbox audit:** sandbox runs 28, host executions 0, denials 3",
+      "**Sandbox audit:** sandbox runs 28, host executions 0, denials 3, denied mounts 1",
       "",
     ].join("\n")
   );
