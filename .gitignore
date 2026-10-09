@@ -5,3 +5,5 @@ logs/*
 work/*
 !work/.gitkeep
 *.pem
+out/
+inputs/

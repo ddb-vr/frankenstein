@@ -2,12 +2,17 @@
 // a skill from `.claude/skills/`. The skill must be enabled in `registry.json`;
 // network access follows its registry entry. Not in test mode.
 //
-//   node scripts/run-skill.ts <skill> '<json>'
-//   node scripts/run-skill.ts <skill> --input-file <path>   # larger inputs
+//   node scripts/run-skill.ts <skill> '<json>' [--mount <path>]... [--output <dir>]
+//   node scripts/run-skill.ts <skill> --input-file <file> [--mount <path>]... [--output <dir>]
 //
 // The JSON input is a CLI argument or a file; stdin is not read, so a pipe
 // into this script fails with the missing-input error. Exactly one of the two
 // must be given.
+//
+// `--mount` (repeatable) mounts a file or directory read-only at
+// `/input/<basename>`; `--output` mounts a directory inside `out/` read-write at
+// `/output`. Both pass the path policy in `lib/mount-policy.ts` before
+// anything starts; the skill gets only the paths, in its JSON input.
 //
 // stdout: the skill's JSON output (exit code passed through). Errors before
 // the skill runs print `{ "error": … }` and exit 1. Full stderr goes to
@@ -16,22 +21,62 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { SKILL_ENTRY, SKILL_NAME } from "./lib/examples.ts";
+import { repoMountPolicy, resolveMounts } from "./lib/mount-policy.ts";
 import { type RegistryEntry, readRegistry } from "./lib/registry.ts";
 import { runInSandbox, type SandboxResult, SKILL_MOUNT } from "./sandbox.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const INPUT_FILE_FLAG = "--input-file";
+const MOUNT_FLAG = "--mount";
+const OUTPUT_FLAG = "--output";
+const VALUE_FLAGS = [INPUT_FILE_FLAG, MOUNT_FLAG, OUTPUT_FLAG] as const;
 const USAGE =
-  "usage: node scripts/run-skill.ts <skill> '<json>' | node scripts/run-skill.ts <skill> --input-file <path>";
+  "usage: node scripts/run-skill.ts <skill> '<json>' | --input-file <file> [--mount <path>]... [--output <dir>]";
 
 export interface Invocation {
   input: unknown;
+  /** `--mount` paths as given, in order. */
+  mounts: string[];
   name: string;
+  /** `--output` directory as given. */
+  output?: string;
 }
 
+type ValueFlag = (typeof VALUE_FLAGS)[number];
+
+/** Values of `--flag <v>` / `--flag=<v>` options; other words are inline. */
+const splitArgs = (
+  args: readonly string[]
+): { inline: string[]; values: Record<ValueFlag, string[]> } => {
+  const inline: string[] = [];
+  const values: Record<ValueFlag, string[]> = {
+    [INPUT_FILE_FLAG]: [],
+    [MOUNT_FLAG]: [],
+    [OUTPUT_FLAG]: [],
+  };
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    const flag = VALUE_FLAGS.find(
+      (candidate) => arg === candidate || arg.startsWith(`${candidate}=`)
+    );
+    if (flag === undefined) {
+      inline.push(arg);
+      continue;
+    }
+    const value = arg === flag ? args[index + 1] : arg.slice(flag.length + 1);
+    if (value === undefined || value === "") {
+      throw new Error(`${flag} needs a path`);
+    }
+    values[flag].push(value);
+    index += arg === flag ? 1 : 0;
+  }
+  return { inline, values };
+};
+
 /**
- * Skill name and parsed JSON input from the CLI arguments (after the script
- * path). Hand-parsed so an inline value like `-1` stays a JSON argument.
+ * Skill name, parsed JSON input, mounts and output from the CLI arguments
+ * (after the script path). Hand-parsed so an inline value like `-1` stays a
+ * JSON argument.
  */
 export const parseInvocation = (
   args: readonly string[],
@@ -41,22 +86,11 @@ export const parseInvocation = (
   if (name === undefined) {
     throw new Error(USAGE);
   }
-  const inline: string[] = [];
-  const files: string[] = [];
-  for (let index = 0; index < rest.length; index += 1) {
-    const arg = rest[index] ?? "";
-    if (arg === INPUT_FILE_FLAG) {
-      const file = rest[index + 1];
-      if (file === undefined) {
-        throw new Error(`${INPUT_FILE_FLAG} needs a path`);
-      }
-      files.push(file);
-      index += 1;
-    } else if (arg.startsWith(`${INPUT_FILE_FLAG}=`)) {
-      files.push(arg.slice(INPUT_FILE_FLAG.length + 1));
-    } else {
-      inline.push(arg);
-    }
+  const { inline, values } = splitArgs(rest);
+  const files = values[INPUT_FILE_FLAG];
+  const outputs = values[OUTPUT_FLAG];
+  if (outputs.length > 1) {
+    throw new Error(`pass ${OUTPUT_FLAG} at most once`);
   }
   if (inline.length + files.length !== 1) {
     throw new Error(
@@ -74,9 +108,10 @@ export const parseInvocation = (
       throw new Error(`cannot read input file ${file}`, { cause: error });
     }
   }
+  let input: unknown;
   try {
     // The parse error is not echoed: it would quote the file's content.
-    return { input: JSON.parse(text), name };
+    input = JSON.parse(text);
   } catch (error) {
     throw new Error(
       file === undefined
@@ -85,6 +120,13 @@ export const parseInvocation = (
       { cause: error }
     );
   }
+  const [output] = outputs;
+  return {
+    input,
+    mounts: values[MOUNT_FLAG],
+    name,
+    ...(output === undefined ? {} : { output }),
+  };
 };
 
 const writeLog = (name: string, lines: string[]): string => {
@@ -112,8 +154,18 @@ export const enabledEntry = (root: string, name: string): RegistryEntry => {
   return entry;
 };
 
-const run = async ({ name, input }: Invocation): Promise<number> => {
+const run = async ({
+  input,
+  mounts,
+  name,
+  output,
+}: Invocation): Promise<number> => {
   const entry = enabledEntry(REPO_ROOT, name);
+  // Before the sandbox and the run log: a denied path starts nothing.
+  const resolved = resolveMounts(
+    { mounts, output },
+    repoMountPolicy(REPO_ROOT, process.cwd())
+  );
   const header = [
     `skill: ${name} ${entry.version}`,
     `network: ${entry.network}`,
@@ -124,6 +176,7 @@ const run = async ({ name, input }: Invocation): Promise<number> => {
   try {
     result = await runInSandbox({
       command: [`${SKILL_MOUNT}/${SKILL_ENTRY}`],
+      ...resolved,
       network: entry.network,
       onRunLog: (record) => runRecords.push(record),
       skillDir: path.join(REPO_ROOT, ".claude", "skills", name),

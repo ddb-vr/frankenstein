@@ -26,7 +26,9 @@ test("clean run: runner calls only, every sandbox run accounted for", async () =
   assert.deepEqual(auditRun(sessionId, root), {
     bashCommands: 10,
     denials: 0,
+    deniedMounts: [],
     hostExecutions: 0,
+    mounts: [],
     // 3 run-examples logs (unit tests + 8 examples each) and 1 run-skill log.
     sandboxRuns: 28,
     session: sessionId,
@@ -113,12 +115,43 @@ test("denied attempts are counted, not treated as host executions", async () => 
   assert.deepEqual(auditRun(sessionId, root), {
     bashCommands: 21,
     denials: 20,
+    deniedMounts: [],
     hostExecutions: 0,
+    mounts: [],
     // Only the allowed run-skill call; earlier logs are outside the session.
     sandboxRuns: 1,
     session: sessionId,
     violations: [],
   });
+});
+
+test("mounts per run-skill log and every denied mount attempt", async () => {
+  const { root, sessionId } = await install("mounts");
+  const report = auditRun(sessionId, root);
+  assert.deepEqual(report.mounts, [
+    {
+      log: "logs/line-count/run-2026-10-09T10-00-01.512Z.log",
+      // The skill's own stdout imitating a mount line is not counted.
+      mounts: [
+        `${root}/demo/data/bank.csv -> /input/bank.csv (ro)`,
+        `${root}/out/test -> /output (rw)`,
+      ],
+    },
+  ]);
+  assert.deepEqual(report.deniedMounts, [
+    {
+      command: "node scripts/run-skill.ts line-count '{}' --mount .env",
+      reason:
+        "denied by a hook: PreToolUse:Bash hook error: Blocked: shell access to secrets (.env, *.pem). Scripts load .env themselves; never read, copy or print it (`.env.example` lists the variables).",
+    },
+    {
+      command: `node scripts/run-skill.ts line-count '{"file":"/input/home"}' --mount ~`,
+      reason: "mount denied: ~: it is or contains the home directory",
+    },
+  ]);
+  assert.equal(report.denials, 1);
+  assert.equal(report.sandboxRuns, 1);
+  assert.deepEqual(report.violations, []);
 });
 
 test("transcript calls missing from the logs are violations", async () => {

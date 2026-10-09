@@ -19,7 +19,8 @@ You implement one Agent Skill. Your prompt is only its name, `<skill>`. You star
 ## Write
 
 Only inside `work/<skill>/`: `SKILL.md`, `scripts/*.ts`, `tests/*.test.ts`, `progress.md`. Every script in `scripts/`
-gets unit tests in `tests/`.
+gets unit tests in `tests/`. Test input files in `work/<skill>/fixtures/input/` belong to the locked examples: read
+them, never change them.
 
 ## Skill contract
 
@@ -27,6 +28,13 @@ gets unit tests in `tests/`.
   write `{ "error": "<message>" }` and exit 1.
 - With `FRANKENSTEIN_MODE=test` the skill must not touch the network; read recorded responses from
   `/skill/fixtures/<name>.json` (`{ url, status, headers, body, recordedAt }`).
+- Input files arrive as paths in the JSON input: `/input/<file>` at runtime (mounted read-only),
+  `/skill/fixtures/input/<file>` in tests. Never hardcode either prefix; always open the path given in the input.
+- If `/output` exists, write large results there as files and keep stdout a compact JSON summary (counts, totals,
+  file names); never print file contents or full row lists to stdout. Without `/output`, return only the summary.
+- Decode text explicitly: `new TextDecoder(encoding, { fatal: true })` with the detected or stated encoding (e.g.
+  `windows-1250` for Czech bank exports; `node:24-slim` supports it). Never rely on a default `utf8` read for user
+  files.
 - Node 24 built-ins only, no npm packages. Relative imports use the `.ts` extension. Erasable TypeScript only (no
   `enum`, `namespace`, parameter properties).
 - Tests use `node:test` and `node:assert/strict`, import from `../scripts/*.ts`, and never use the network.
@@ -52,7 +60,9 @@ Need real API data for tests: `node scripts/record-fixture.ts <skill> <name> <ur
   use. This is how a new session discovers the skill.
 - Usage: `node scripts/run-skill.ts <skill> '<json>'` (JSON input as the argument), or
   `node scripts/run-skill.ts <skill> --input-file <path>` for large inputs. Never a pipe or stdin: `run-skill.ts` does
-  not read stdin.
+  not read stdin. For file inputs: `--mount <path>` per file (the skill reads `/input/<basename>`, named in the JSON
+  input) and `--output out/<dir>` when it writes files, e.g.
+  `node scripts/run-skill.ts <skill> '{"file":"/input/bank.csv"}' --mount demo/data/bank.csv --output out/bank`.
 - Input and output shape, including the error shape.
 - 2 short examples (input → output).
 - Network: whether it needs network access, and which domains.

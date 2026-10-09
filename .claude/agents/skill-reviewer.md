@@ -18,7 +18,12 @@ Then run `node scripts/run-examples.ts work/<skill>` once.
   examples that the PRD covers.
 - Each script has meaningful unit tests: real behavior, edge cases and errors from the PRD, not trivial asserts.
 - No network or filesystem access outside the contract: network only outside `FRANKENSTEIN_MODE=test` and only to the
-  domains in the PRD; files only from `/skill/fixtures/` in test mode. No npm packages.
+  domains in the PRD; reads only from `/skill/fixtures/` and the paths given in the JSON input; writes only under
+  `/output`, and only when it exists. No npm packages.
+- No hardcoded file path: input files are opened only through the path in the JSON input (no `/input/…` or
+  `/skill/fixtures/input/…` literals in `scripts/`); text is decoded with an explicit encoding (`TextDecoder`).
+- stdout stays a compact JSON summary (counts, totals, file names); large results go to files in `/output`, never as
+  full row lists or file contents on stdout.
 - No hidden hardcoding of example inputs or outputs.
 - `SKILL.md` `description` says precisely what the skill does and when to use it, so a fresh session finds it; usage,
   input/output shape, examples and network requirement are accurate.

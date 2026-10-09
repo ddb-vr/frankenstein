@@ -8,13 +8,18 @@
 // the sandbox run logs `logs/<skill>/*.log` written during the session.
 //
 // stdout: one JSON line
-//   { session, bashCommands, sandboxRuns, hostExecutions, denials, violations: [{ command, reason }] }
+//   { session, bashCommands, sandboxRuns, hostExecutions, denials, mounts: [{ log, mounts }],
+//     deniedMounts: [{ command, reason }], violations: [{ command, reason }] }
 // - bashCommands: Bash/PowerShell tool calls, denied ones included.
 // - sandboxRuns: `sandbox: container=…` records in the session's run logs.
 // - hostExecutions: shell calls that ran (not denied) and executed code from
 //   work/ or .claude/skills/ other than through `node scripts/run-examples.ts`
 //   or `node scripts/run-skill.ts` from the repo root. Expected: 0.
 // - denials: tool calls rejected by a hook, a permission rule or the user.
+// - mounts: per run-skill log, its input and output mounts
+//   (`<host> -> <container> (ro|rw)`); logs without any are left out.
+// - deniedMounts: run-skill calls with `--mount`/`--output` that a hook or a
+//   permission rule denied, or that the script's path policy refused.
 // - violations: every host execution, plus each disagreement between the
 //   transcripts and the logs.
 // Exit 1 when hostExecutions > 0; exit 2 with `{ error }` on stderr when the
@@ -35,16 +40,27 @@ import {
 } from "./hooks/lib.ts";
 import { parseCommand, type SimpleCommand, type Word } from "./hooks/shell.ts";
 import { isPlainObject } from "./lib/examples.ts";
+import { MOUNT_DENIED } from "./lib/mount-policy.ts";
+import { MOUNT_RECORD, SKILL_MOUNT } from "./sandbox.ts";
 
 export interface Violation {
   command: string;
   reason: string;
 }
 
+export interface RunMounts {
+  /** Repo-relative run log. */
+  log: string;
+  /** `<host> -> <container> (ro|rw)`, the skill directory left out. */
+  mounts: string[];
+}
+
 export interface AuditReport {
   bashCommands: number;
   denials: number;
+  deniedMounts: Violation[];
   hostExecutions: number;
+  mounts: RunMounts[];
   sandboxRuns: number;
   session: string;
   violations: Violation[];
@@ -53,6 +69,9 @@ export interface AuditReport {
 const SHELL_TOOLS: Record<string, true> = { Bash: true, PowerShell: true };
 const RUN_EXAMPLES = "scripts/run-examples.ts";
 const RUN_SKILL = "scripts/run-skill.ts";
+const MOUNT_FLAG = /^--(mount|output)(=|$)/;
+// Where a run-skill log switches from run records to the skill's stdout.
+const SKILL_STDOUT = "\nstdout:\n";
 const SKILL_CODE_DIRS = ["work", ".claude/skills"];
 const SKILL_CODE_REF = /(^|[\s/=:<>])(work|\.claude\/skills)(\/|$)/;
 const CHANGE_DIR: Record<string, true> = {
@@ -405,6 +424,8 @@ const readHookLog = (
 
 interface RunLog {
   kind: "examples" | "skill";
+  /** Input/output mounts of the run records (skill directory left out). */
+  mounts: string[];
   records: number;
   /** Repo-relative POSIX path, as the runners report it. */
   relative: string;
@@ -455,8 +476,17 @@ const readRunLogs = (root: string, from: number, to: number): RunLog[] => {
         continue;
       }
       const text = readFileSync(path.join(logsDir, skill, name), "utf8");
+      // Records precede the skill's own stdout, which could imitate them.
+      const [records = ""] = text.split(SKILL_STDOUT, 1);
+      const mounts = records.split("\n").flatMap((line) => {
+        const [, host, container, mode] = MOUNT_RECORD.exec(line) ?? [];
+        return container === undefined || container === SKILL_MOUNT
+          ? []
+          : [`${host} -> ${container} (${mode})`];
+      });
       logs.push({
         kind: start.kind,
+        mounts,
         records: text.match(RUN_RECORD)?.length ?? 0,
         relative: `logs/${skill}/${name}`,
         skill,
@@ -650,6 +680,39 @@ const crossCheckRunLogs = (
   }
 };
 
+/**
+ * Why a run-skill call with `--mount`/`--output` did not run: the hook or
+ * permission denial, or the path policy's `{ "error": "… denied: …" }`.
+ * `undefined` for other commands and for mount attempts that ran.
+ */
+const deniedMountReason = (
+  command: string,
+  result: ToolResult | undefined
+): string | undefined => {
+  const attemptsMount = expand(parseCommand(command).commands).commands.some(
+    ({ words }) => {
+      const script = words.findIndex(({ value }) =>
+        toPosixPath(value).endsWith(RUN_SKILL)
+      );
+      return (
+        script >= 0 &&
+        words.slice(script + 1).some(({ value }) => MOUNT_FLAG.test(value))
+      );
+    }
+  );
+  if (!attemptsMount || result === undefined) {
+    return;
+  }
+  if (result.denial !== undefined) {
+    const [firstLine = ""] = result.text.trim().split("\n", 1);
+    return `denied by ${result.denial === "hook" ? "a hook" : "a permission rule or the user"}: ${firstLine}`;
+  }
+  const refusal = jsonLines(result.text).find(
+    ({ error }) => typeof error === "string" && MOUNT_DENIED.test(error)
+  );
+  return typeof refusal?.error === "string" ? refusal.error : undefined;
+};
+
 // ---------------------------------------------------------------------------
 // Audit
 
@@ -676,6 +739,7 @@ export const auditRun = (
   });
 
   const violations: Violation[] = [];
+  const deniedMounts: Violation[] = [];
   const runnerCalls: RunnerCall[] = [];
   let bashCommands = 0;
   let hostExecutions = 0;
@@ -685,6 +749,10 @@ export const auditRun = (
       continue;
     }
     bashCommands += 1;
+    const mountDenial = deniedMountReason(command, result);
+    if (mountDenial !== undefined) {
+      deniedMounts.push({ command, reason: mountDenial });
+    }
     if (result?.denial !== undefined) {
       continue;
     }
@@ -724,6 +792,10 @@ export const auditRun = (
     sandboxRuns: runLogs.reduce((sum, log) => sum + log.records, 0),
     hostExecutions,
     denials: calls.filter(({ result }) => result?.denial !== undefined).length,
+    mounts: runLogs
+      .filter(({ kind, mounts }) => kind === "skill" && mounts.length > 0)
+      .map(({ mounts, relative }) => ({ log: relative, mounts })),
+    deniedMounts,
     violations,
   };
 };

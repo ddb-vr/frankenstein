@@ -13,6 +13,8 @@ const EXACTLY_ONCE = /pass the JSON input exactly once/;
 const NOT_JSON_FILE = /input file .*input\.json must contain one JSON value/;
 const CANNOT_READ = /cannot read input file/;
 const NEEDS_PATH = /--input-file needs a path/;
+const MOUNT_NEEDS_PATH = /--mount needs a path/;
+const ONE_OUTPUT = /pass --output at most once/;
 const SECRET = "GITHUB_APP_PRIVATE_KEY_PATH";
 const NOT_JSON_INLINE = /^input must be one JSON value$/;
 const DISABLED = /skill "csv-sum" is disabled/;
@@ -32,11 +34,13 @@ afterEach(() => {
 test("JSON input as the argument", () => {
   assert.deepEqual(parseInvocation(["ico-check", '{"ico":"27074358"}']), {
     input: { ico: "27074358" },
+    mounts: [],
     name: "ico-check",
   });
   // A negative number is a JSON value, not an option.
   assert.deepEqual(parseInvocation(["calc", "-1"]), {
     input: -1,
+    mounts: [],
     name: "calc",
   });
 });
@@ -46,6 +50,7 @@ test("JSON input from --input-file, in both spellings", () => {
   writeFileSync(file, JSON.stringify({ icos: ["27074358", "00006947"] }));
   const expected = {
     input: { icos: ["27074358", "00006947"] },
+    mounts: [],
     name: "ico-check",
   };
   assert.deepEqual(
@@ -55,6 +60,60 @@ test("JSON input from --input-file, in both spellings", () => {
   assert.deepEqual(
     parseInvocation(["ico-check", `--input-file=${file}`]),
     expected
+  );
+});
+
+test("--mount repeats and --output is optional, in both spellings and any position", () => {
+  const file = path.join(dir, "input.json");
+  writeFileSync(file, '{"statement":"/input/bank.csv"}');
+  assert.deepEqual(
+    parseInvocation([
+      "bank-match",
+      "--mount",
+      "demo/data/bank.csv",
+      '{"statement":"/input/bank.csv"}',
+      "--mount=inputs/invoices",
+      "--output",
+      "out/session-1",
+    ]),
+    {
+      input: { statement: "/input/bank.csv" },
+      mounts: ["demo/data/bank.csv", "inputs/invoices"],
+      name: "bank-match",
+      output: "out/session-1",
+    }
+  );
+  assert.deepEqual(
+    parseInvocation([
+      "bank-match",
+      "--input-file",
+      file,
+      "--mount",
+      "demo/data/bank.csv",
+      "--output=out/x",
+    ]),
+    {
+      input: { statement: "/input/bank.csv" },
+      mounts: ["demo/data/bank.csv"],
+      name: "bank-match",
+      output: "out/x",
+    }
+  );
+  // A flag value is never taken as the JSON input.
+  assert.throws(
+    () => parseInvocation(["bank-match", "--mount", "{}"]),
+    EXACTLY_ONCE
+  );
+  for (const args of [
+    ["bank-match", "{}", "--mount"],
+    ["bank-match", "{}", "--mount="],
+  ]) {
+    assert.throws(() => parseInvocation(args), MOUNT_NEEDS_PATH);
+  }
+  assert.throws(
+    () =>
+      parseInvocation(["bank-match", "{}", "--output", "out/a", "--output=b"]),
+    ONE_OUTPUT
   );
 });
 

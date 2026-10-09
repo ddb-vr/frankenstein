@@ -11,7 +11,14 @@ answers. The prompt states the mode: `questions` or `write`.
 
 Skill contract (everything you write must fit it): the entry `scripts/main.ts` reads one JSON value from stdin and
 writes one JSON value to stdout (exit 0). Handled errors write `{ "error": "<message>" }` and exit 1. Tests run offline:
-network responses come from recorded fixtures.
+network responses come from recorded fixtures. Files are never passed as content: the JSON input names their paths
+(`/input/<file>` at runtime, `/skill/fixtures/input/<file>` in tests), and a skill that produces large results writes
+them to `/output` while stdout stays a compact summary (counts, totals, file names).
+
+User files: the prompt may name paths of the user's files. You may read **only the first few lines** of each (Read with
+a small `limit`) to learn its format: headers, separator, decimal and date format, encoding (a Czech bank export is
+often `windows-1250`; mojibake in the first lines means it is not UTF-8). Never read a whole user file and never copy
+its rows anywhere.
 
 ## Mode `questions`
 
@@ -45,8 +52,8 @@ Input: the request and all answers, plus any corrections or reviewer reasons.
    rewrite), reuse it.
 2. Write `work/<skill>/PRD.md` with these sections:
   - `## Goal`: one sentence starting "The user expects that at the end …"
-  - `## Inputs`: the stdin JSON shape
-  - `## Outputs`: the stdout JSON shape
+  - `## Inputs`: the stdin JSON shape; for files, the path fields plus the file format (columns, separator, encoding)
+  - `## Outputs`: the stdout JSON shape (a compact summary) and any files written to `/output`
   - `## Edge cases`
   - `## Errors`: when the skill exits 1 with `{ "error" }`
   - `## Network`: "Not needed", or "Needed" with the exact domains and endpoints
@@ -69,5 +76,9 @@ Input: the request and all answers, plus any corrections or reviewer reasons.
 - Every example must trace to a user answer. Never invent expected values the user did not confirm; put them under Open
   points.
 - If the skill needs network data, expected values must match data you can record as fixtures. Do not guess live values.
+- If the skill reads files, write small **synthetic** test files to `work/<skill>/fixtures/input/` in the user's format
+  (invented names and amounts, never rows from the user's files) and reference them in inputs as
+  `/skill/fixtures/input/<file>`. They are part of the locked examples. The Write tool writes UTF-8 only: for another
+  encoding, state it under Inputs; the builder's unit tests cover decoding it with byte-level test data.
 
 Reply with the skill name, the Goal sentence and a table of the examples: name, input, expected. Keep it short.

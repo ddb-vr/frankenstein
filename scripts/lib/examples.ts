@@ -1,4 +1,14 @@
 // Skill contract: `examples.json` schema, runtime validator and output matching.
+//
+// The entry reads one JSON value from stdin and writes one JSON value to
+// stdout. Input files are never inlined: the input names their paths,
+// `/input/<file>` at runtime (`run-skill.ts --mount`, read-only) and
+// `/skill/fixtures/input/<file>` in examples (the files live in the skill's
+// `fixtures/input/`); a skill never hardcodes either prefix. When `/output`
+// exists (always in `run-examples.ts`, with `run-skill.ts --output`), large
+// results go there as files and stdout stays a compact summary. Only stdout
+// is matched against `expected`. Text files are decoded with an explicit
+// encoding (`TextDecoder`, e.g. `windows-1250`).
 
 import { isDeepStrictEqual } from "node:util";
 

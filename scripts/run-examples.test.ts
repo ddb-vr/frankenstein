@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -11,7 +19,33 @@ import {
   logTimestamp,
   MAX_REASON_LENGTH,
   truncateReason,
+  withOutputDir,
 } from "./run-examples.ts";
+
+test("each example gets a fresh, empty /output dir that is removed afterwards", async () => {
+  const seen: string[] = [];
+  const result = await withOutputDir((dir) => {
+    seen.push(dir);
+    assert.ok(statSync(dir).isDirectory());
+    assert.deepEqual(readdirSync(dir), []);
+    // What a skill writes to /output is removed with the directory.
+    writeFileSync(path.join(dir, "report.csv"), "a;b\n");
+    return Promise.resolve("stdout");
+  });
+  assert.equal(result, "stdout");
+  await assert.rejects(
+    withOutputDir((dir) => {
+      seen.push(dir);
+      return Promise.reject(new Error("docker failed"));
+    }),
+    { message: "docker failed" }
+  );
+  assert.equal(seen.length, 2);
+  assert.notEqual(seen[0], seen[1]);
+  for (const dir of seen) {
+    assert.equal(existsSync(dir), false, dir);
+  }
+});
 
 test("truncateReason keeps short reasons and caps long ones at the limit", () => {
   const exact = "x".repeat(MAX_REASON_LENGTH);

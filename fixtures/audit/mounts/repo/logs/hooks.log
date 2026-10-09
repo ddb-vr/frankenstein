@@ -1,0 +1,6 @@
+2026-10-09T10:00:01.020Z	budget	allow	no objection	node scripts/run-skill.ts line-count '{"file":"/input/bank.csv"}' --mount demo/data/bank.csv --output out/test
+2026-10-09T10:00:01.035Z	guard-bash	allow	no objection	node scripts/run-skill.ts line-count '{"file":"/input/bank.csv"}' --mount demo/data/bank.csv --output out/test
+2026-10-09T10:00:05.020Z	budget	allow	no objection	node scripts/run-skill.ts line-count '{}' --mount .env
+2026-10-09T10:00:05.035Z	guard-bash	deny	shell access to secrets (.env, *.pem).	node scripts/run-skill.ts line-count '{}' --mount .env
+2026-10-09T10:00:07.020Z	budget	allow	no objection	node scripts/run-skill.ts line-count '{"file":"/input/home"}' --mount ~
+2026-10-09T10:00:07.035Z	guard-bash	allow	no objection	node scripts/run-skill.ts line-count '{"file":"/input/home"}' --mount ~

@@ -17,6 +17,24 @@ Lifecycle for building a new skill:
    `node scripts/lock.ts <skill>` (hooks block any later edit). See [Intake](#intake) step 6.
 5. **Build, review, install** – see [Build, review, install](#build-review-install).
 
+## User files
+
+**Never read user data files into your context** (bank statements, invoices, exports): their content would pass through
+the model. Hand them to the skill instead:
+
+```sh
+node scripts/run-skill.ts <skill> '{"statement":"/input/bank.csv"}' --mount demo/data/bank.csv --output out/<run>
+```
+
+- `--mount <path>` (repeatable) mounts a file or directory read-only at `/input/<basename>`; put those paths in the
+  JSON input. Paths must lie inside `INPUT_ALLOWED_ROOTS` (default `demo/data`, `inputs`); secrets, `.git`, `.claude`,
+  `scripts/` and the home directory are always refused. A refusal (`mount denied: …`) is final: ask the user to copy the
+  file into `inputs/` instead.
+- `--output out/<run>` gives the skill a writable `/output`. Answer from the skill's compact stdout summary and point
+  the user to the files in `out/<run>/`; do not open them yourself.
+- When the task involves a user file, pass its repo-relative path (never its content) to the `prd` agent; it may read
+  the first few lines to learn the format (headers, separator, encoding).
+
 ## Intake
 
 This covers lifecycle steps 1–4: gap detection, then a reviewed and user-confirmed source of truth
@@ -26,10 +44,11 @@ answers. Nothing is locked until the last step, so every loop back to **Write** 
 1. **Gap detection.** Read `registry.json` and `.claude/skills/*/SKILL.md`. Only skills listed in `registry.json` with
    `"enabled": true` are user capabilities; `frankenstein` and `grill-me` are lifecycle skills and never cover a task.
    If an enabled skill covers the task, run it with `node scripts/run-skill.ts <skill> '<json>'` (JSON input as the
-   argument; for large inputs write it to a file and use `--input-file <path>` instead) and stop here. Otherwise tell
-   the user in one line which capability is missing, then continue.
+   argument; for large inputs write it to a file and use `--input-file <path>` instead; user files via `--mount`, see
+   [User files](#user-files)) and stop here. Otherwise tell the user in one line which capability is missing, then
+   continue.
 2. **Questions.** Delegate to the `prd` agent with `mode: questions`. Pass the user's request verbatim, all answers so
-   far and the round number.
+   far, the round number and the paths of any user files involved.
 3. **Grill me.** Follow the `grill-me` skill (`.claude/skills/grill-me/SKILL.md`): plain words in the user's language,
    no technical terms. Ask the returned questions with the built-in `AskUserQuestion` tool. It takes 1–4 questions per
    call and 2–4 options per question, and adds an "Other" row for free text. Put the recommended option first. If the
@@ -40,8 +59,9 @@ answers. Nothing is locked until the last step, so every loop back to **Write** 
     that would change the examples.
   - If the request is already precise (`prd` returns "No questions"), skip the grilling. Ask a single confirmation of
     its assumptions instead.
-4. **Write.** Delegate to `prd` with `mode: write`. Pass the request, every question with its answer, and any
-   corrections or reviewer reasons. On a rewrite, also pass the skill name so it stays the same.
+4. **Write.** Delegate to `prd` with `mode: write`. Pass the request, every question with its answer, the paths of any
+   user files involved, and any corrections or reviewer reasons. On a rewrite, also pass the skill name so it stays the
+   same.
 5. **PRD review.** Delegate to `prd-reviewer` with the skill name. Read the fenced `verdict` block.
   - `approve`: continue with step 6.
   - `reject`: go back to step 4 and pass the `reasons`. For reasons starting with `Ask the user:`, ask the user first
@@ -79,8 +99,8 @@ action, follow its reason.
 6. **Done** – `node scripts/tracker.ts done --issue <n> --summary "<what was built>" --version <vN>`. Usage and cost
    come from the current run automatically.
 7. **Finish the user's task** – use the new skill via `node scripts/run-skill.ts <skill> '<json>'` (or
-   `--input-file <path>` for large inputs), answer the user's original request and report the run cost (`totalUsd` from
-   step 6).
+   `--input-file <path>` for large inputs; user files with `--mount`, results with `--output out/<run>`, see
+   [User files](#user-files)), answer the user's original request and report the run cost (`totalUsd` from step 6).
 
 **Blocked** – the budget or iteration hook denies, the post-reject builder call does not return `pass`, the second
 review rejects, the builder returns `impossible`, or install returns `"installed": false`: run
