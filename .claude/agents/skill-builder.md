@@ -19,14 +19,16 @@ You implement one Agent Skill. Your prompt is only its name, `<skill>`. You star
 ## Write
 
 Only inside `work/<skill>/`: `SKILL.md`, `scripts/*.ts`, `tests/*.test.ts`, `tests/fixtures/`, `progress.md` (plus
-synthetic upstream data in `inputs/<skill>-upstream/`, below). Every script in `scripts/` gets unit tests in `tests/`.
+synthetic upstream data in `inputs/<skill>-upstream/<case>/`, below). Every script in `scripts/` gets unit tests in
+`tests/`.
 Test input files in `work/<skill>/fixtures/input/` belong to the locked examples: read them, never change them.
 
 Composing skill (the PRD has a `## Composes with` section naming `<upstream>`): the input is the upstream skill's
 output file. Never copy, port or import upstream logic (`.claude/skills/<upstream>/scripts/`); only parse its output.
 The locked `fixtures/input/` already holds real upstream output, made at intake by running the upstream skill. For more
-unit-test data, do the same: write synthetic upstream input to `inputs/<skill>-upstream/`, run
-`node scripts/run-skill.ts <upstream> '<json>' --mount inputs/<skill>-upstream/<file> --output out/<skill>-<case>`,
+unit-test data, do the same: write synthetic upstream input to `inputs/<skill>-upstream/<case>/` (never overwrite the
+intake files directly in `inputs/<skill>-upstream/`), run
+`node scripts/run-skill.ts <upstream> '<json>' --mount inputs/<skill>-upstream/<case>/<file> --output out/<skill>-<case>`,
 then copy the resulting file into `work/<skill>/tests/fixtures/` (never into `fixtures/input/`, it is locked).
 
 ## Skill contract
