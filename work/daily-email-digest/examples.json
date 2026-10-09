@@ -1,0 +1,17 @@
+{
+  "skill": "daily-email-digest",
+  "entry": "scripts/main.ts",
+  "examples": [
+    {
+      "name": "run now in test mode sends one preview and nothing real",
+      "input": {},
+      "expected": [
+        { "node": "Set Config", "path": "0.mode", "equals": "test" },
+        { "node": "Get Unread Emails", "ran": true },
+        { "node": "Is Live?", "path": "length", "equals": 1 },
+        { "node": "Send Test Preview", "path": "length", "equals": 1 },
+        { "node": "Send Daily Digest", "ran": false }
+      ]
+    }
+  ]
+}

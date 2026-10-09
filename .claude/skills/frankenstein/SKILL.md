@@ -27,7 +27,8 @@ answers. Nothing is locked until the last step, so every loop back to **Write** 
    `"enabled": true` are user capabilities; `frankenstein` and `grill-me` are lifecycle skills and never cover a task.
    If an enabled skill covers the task, run it with `node scripts/run-skill.ts <skill> '<json>'` (JSON input as the
    argument; for large inputs write it to a file and use `--input-file <path>` instead) and stop here. Otherwise tell
-   the user in one line which capability is missing, then continue.
+   the user in one line which capability is missing, then continue. If the task is recurring and started by something
+   outside the chat (schedule, new email, webhook), build an n8n workflow instead: follow [N8N.md](N8N.md).
 2. **Questions.** Delegate to the `prd` agent with `mode: questions`. Pass the user's request verbatim, all answers so
    far and the round number.
 3. **Grill me.** Follow the `grill-me` skill (`.claude/skills/grill-me/SKILL.md`): plain words in the user's language,

@@ -1,0 +1,271 @@
+{
+  "name": "Daily Email Digest",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "", "name": "" }
+      },
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 200]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 8,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "mode", "name": "mode", "type": "string", "value": "test" },
+            { "id": "testEmail", "name": "testEmail", "type": "string", "value": "" },
+            { "id": "digestTo", "name": "digestTo", "type": "string", "value": "" }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "name": "Set Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [260, 100]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 50,
+        "simple": true,
+        "filters": {
+          "readStatus": "unread",
+          "receivedAfter": "={{ $now.minus({ hours: 24 }).toISO() }}"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "gmailOAuth2": { "id": "", "name": "" }
+      },
+      "name": "Get Unread Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [520, 100],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-id",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "exists", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Has Unread Emails?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [780, 100]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "data",
+        "include": "allFields",
+        "options": {}
+      },
+      "name": "Aggregate Emails",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [1040, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "subject",
+              "name": "subject",
+              "type": "string",
+              "value": "=Daily digest: {{ $json.data.length }} unread e-mail(s)"
+            },
+            {
+              "id": "text",
+              "name": "text",
+              "type": "string",
+              "value": "=Unread e-mails from the last 24 hours:\n\n{{ $json.data.map((m) => '- ' + (m.From || 'unknown sender') + ': ' + (m.Subject || '(no subject)')).join('\\n') }}"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "name": "Format Daily Digest",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1300, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "subject",
+              "name": "subject",
+              "type": "string",
+              "value": "Daily digest: nothing new"
+            },
+            {
+              "id": "text",
+              "name": "text",
+              "type": "string",
+              "value": "No unread e-mails in the last 24 hours."
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "name": "Format Empty Digest",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1040, 220]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "is-live",
+              "leftValue": "={{ $('Set Config').first().json.mode }}",
+              "rightValue": "live",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Is Live?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1560, 100]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $('Set Config').first().json.digestTo }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.text }}",
+        "options": { "appendAttribution": false }
+      },
+      "credentials": {
+        "gmailOAuth2": { "id": "", "name": "" }
+      },
+      "name": "Send Daily Digest",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1820, 0]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $('Set Config').first().json.testEmail }}",
+        "subject": "=[TEST] {{ $json.subject }} → {{ $('Set Config').first().json.digestTo }}",
+        "emailType": "text",
+        "message": "=This e-mail would be sent to {{ $('Set Config').first().json.digestTo }}:\n\n{{ $json.text }}",
+        "options": { "appendAttribution": false }
+      },
+      "credentials": {
+        "gmailOAuth2": { "id": "", "name": "" }
+      },
+      "name": "Send Test Preview",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1820, 220]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{ "node": "Set Config", "type": "main", "index": 0 }]]
+    },
+    "Schedule Trigger": {
+      "main": [[{ "node": "Set Config", "type": "main", "index": 0 }]]
+    },
+    "Set Config": {
+      "main": [[{ "node": "Get Unread Emails", "type": "main", "index": 0 }]]
+    },
+    "Get Unread Emails": {
+      "main": [[{ "node": "Has Unread Emails?", "type": "main", "index": 0 }]]
+    },
+    "Has Unread Emails?": {
+      "main": [
+        [{ "node": "Aggregate Emails", "type": "main", "index": 0 }],
+        [{ "node": "Format Empty Digest", "type": "main", "index": 0 }]
+      ]
+    },
+    "Aggregate Emails": {
+      "main": [[{ "node": "Format Daily Digest", "type": "main", "index": 0 }]]
+    },
+    "Format Daily Digest": {
+      "main": [[{ "node": "Is Live?", "type": "main", "index": 0 }]]
+    },
+    "Format Empty Digest": {
+      "main": [[{ "node": "Is Live?", "type": "main", "index": 0 }]]
+    },
+    "Is Live?": {
+      "main": [
+        [{ "node": "Send Daily Digest", "type": "main", "index": 0 }],
+        [{ "node": "Send Test Preview", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

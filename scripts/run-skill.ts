@@ -15,7 +15,10 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { requireEnvVars } from "./lib/env.ts";
 import { SKILL_ENTRY, SKILL_NAME } from "./lib/examples.ts";
+import { clientFromEnv, runWorkflow } from "./lib/n8n-client.ts";
+import { WEBHOOK_HEADER, WEBHOOK_SECRET_ENV } from "./lib/n8n-workflow.ts";
 import { type RegistryEntry, readRegistry } from "./lib/registry.ts";
 import { runInSandbox, type SandboxResult, SKILL_MOUNT } from "./sandbox.ts";
 
@@ -112,8 +115,41 @@ export const enabledEntry = (root: string, name: string): RegistryEntry => {
   return entry;
 };
 
+/** An n8n skill: the workflow runs in n8n, called from the host, no sandbox. */
+const runWorkflowSkill = async (
+  name: string,
+  workflow: { id: string; webhookPath: string },
+  input: unknown
+): Promise<number> => {
+  const client = clientFromEnv();
+  requireEnvVars([WEBHOOK_SECRET_ENV]);
+  const result = await runWorkflow(client, {
+    headerName: WEBHOOK_HEADER,
+    input,
+    secret: process.env[WEBHOOK_SECRET_ENV] ?? "",
+    webhookPath: workflow.webhookPath,
+    workflowId: workflow.id,
+  });
+  const output = {
+    ...result,
+    ...(result.id === ""
+      ? {}
+      : { url: client.executionUrl(workflow.id, result.id) }),
+  };
+  writeLog(name, [
+    `skill: ${name} (n8n workflow ${workflow.id})`,
+    `input: ${JSON.stringify(input)}`,
+    JSON.stringify(output),
+  ]);
+  process.stdout.write(`${JSON.stringify(output)}\n`);
+  return result.status === "success" ? 0 : 1;
+};
+
 const run = async ({ name, input }: Invocation): Promise<number> => {
   const entry = enabledEntry(REPO_ROOT, name);
+  if (entry.workflow !== undefined) {
+    return await runWorkflowSkill(name, entry.workflow, input);
+  }
   const header = [
     `skill: ${name} ${entry.version}`,
     `network: ${entry.network}`,

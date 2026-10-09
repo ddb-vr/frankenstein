@@ -23,6 +23,7 @@ const NODE_ENTRY_SCRIPTS: Record<string, true> = {
   "scripts/audit-run.ts": true,
   "scripts/fix-skill.ts": true,
   "scripts/lock.ts": true,
+  "scripts/n8n.ts": true,
   "scripts/record-fixture.ts": true,
   "scripts/registry.ts": true,
   "scripts/run-examples.ts": true,
@@ -229,7 +230,7 @@ const PIPED_ENTRY_REASON =
 const HOST_EXEC_REASON =
   "Blocked: skill code never runs on the host. Test it in the sandbox with `node scripts/run-examples.ts work/<skill>`; use an installed skill with `node scripts/run-skill.ts <skill> '<json>'` (or `--input-file <path>`).";
 const INTERPRETER_REASON =
-  "Blocked: interpreters and package managers (node, npx, tsx, ts-node, bun, deno, python, npm) run only as an allowed entry point from the repo root: `node scripts/<run-examples|run-skill|registry|lock|tracker|record-fixture|fix-skill|audit-run>.ts …`, `npm test`, `npm run check`, `npm run typecheck`. Test skill code with `node scripts/run-examples.ts work/<skill>`.";
+  "Blocked: interpreters and package managers (node, npx, tsx, ts-node, bun, deno, python, npm) run only as an allowed entry point from the repo root: `node scripts/<run-examples|run-skill|registry|lock|tracker|record-fixture|fix-skill|audit-run|n8n>.ts …`, `npm test`, `npm run check`, `npm run typecheck`. Test skill code with `node scripts/run-examples.ts work/<skill>`.";
 const INLINE_CODE_REASON =
   "Blocked: inline code (`node -e/--eval/-p/--print/--input-type`, `python -c`) never runs on the host. Test skill code with `node scripts/run-examples.ts work/<skill>`.";
 const TEST_RUNNER_REASON =

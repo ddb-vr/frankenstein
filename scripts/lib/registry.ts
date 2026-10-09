@@ -70,6 +70,8 @@ export interface RegistryEntry {
   name: string;
   network: boolean;
   version: string;
+  /** Set for an n8n skill: `run-skill` calls this workflow instead of the sandbox. */
+  workflow?: { id: string; webhookPath: string };
 }
 
 export interface Registry {
@@ -126,6 +128,16 @@ const toRegistryEntry = (value: unknown): RegistryEntry | undefined => {
     name: value.name,
     network: value.network,
     version: value.version,
+    ...(isPlainObject(value.workflow) &&
+    typeof value.workflow.id === "string" &&
+    typeof value.workflow.webhookPath === "string"
+      ? {
+          workflow: {
+            id: value.workflow.id,
+            webhookPath: value.workflow.webhookPath,
+          },
+        }
+      : {}),
   };
   if (value.history === undefined) {
     const installed: HistoryEntry = {
