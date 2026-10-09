@@ -1,3 +1,23 @@
 {
-  "skills": []
+  "skills": [
+    {
+      "enabled": true,
+      "examplesHash": "7dc6f3058a1d5cd1a59514f34b7a5e1f32700dd72b528256f7ca540c36bf7f71",
+      "history": [
+        {
+          "action": "install",
+          "at": "2026-10-09T04:11:57.735Z",
+          "commit": "3819705a20e46590472efa8124baab97a0c2d0ef",
+          "costUsd": 1.685431,
+          "issue": 15,
+          "version": "v1"
+        }
+      ],
+      "installedAt": "2026-10-09T04:11:57.735Z",
+      "issue": 15,
+      "name": "invoice-payment-check",
+      "network": false,
+      "version": "v1"
+    }
+  ]
 }
