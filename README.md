@@ -73,7 +73,7 @@ npm run sandbox:build     # build the Docker sandbox
 claude                    # then ask for something it can't do yet
 ```
 
-Requires **Node.js ≥ 24.3** and **Docker**.
+Requires **Node.js ≥ 24.x** and **Docker**.
 
 ## 🎛️ You stay in control
 
