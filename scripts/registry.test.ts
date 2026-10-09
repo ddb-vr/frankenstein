@@ -35,7 +35,8 @@ const PASS: Summary = {
   unit: "pass",
 };
 const NOT_LOCKED = /work\/\.locks\/text-stats\.json not found/;
-const CHANGED = /examples\.json changed since it was locked/;
+const CHANGED =
+  /examples\.json or its input files \(work\/text-stats\/fixtures\/input\/\) changed since they were locked/;
 const NO_REVIEW = /review\.json not found/;
 const REJECTED = /verdict is "reject", not "approve"/;
 const INVALID_REVIEW = /review\.json is not valid JSON/;
@@ -133,6 +134,19 @@ test("refuses when examples.json changed after locking", async () => {
   lockSkill(root, SKILL);
   appendFileSync(path.join(workDir, "examples.json"), " ");
   approve();
+  await installFails(CHANGED);
+});
+
+test("refuses when an input file changed or appeared after locking", async () => {
+  const inputs = path.join(workDir, "fixtures", "input");
+  mkdirSync(path.join(inputs, "nested"), { recursive: true });
+  writeFileSync(path.join(inputs, "nested", "a.csv"), "x\n1\n");
+  lockSkill(root, SKILL);
+  approve();
+  writeFileSync(path.join(inputs, "nested", "a.csv"), "x\n2\n");
+  await installFails(CHANGED);
+  writeFileSync(path.join(inputs, "nested", "a.csv"), "x\n1\n");
+  writeFileSync(path.join(inputs, "b.csv"), "x\n");
   await installFails(CHANGED);
 });
 

@@ -145,13 +145,73 @@ test("mounts per run-skill log and every denied mount attempt", async () => {
         "denied by a hook: PreToolUse:Bash hook error: Blocked: shell access to secrets (.env, *.pem). Scripts load .env themselves; never read, copy or print it (`.env.example` lists the variables).",
     },
     {
-      command: `node scripts/run-skill.ts line-count '{"file":"/input/home"}' --mount ~`,
-      reason: "mount denied: ~: it is or contains the home directory",
+      // The shell expands `~` before run-skill sees it.
+      command: `node scripts/run-skill.ts line-count '{"file":"/input/demo"}' --mount /Users/demo`,
+      reason: "mount denied: /Users/demo: it is or contains the home directory",
     },
   ]);
   assert.equal(report.denials, 1);
   assert.equal(report.sandboxRuns, 1);
   assert.deepEqual(report.violations, []);
+});
+
+/**
+ * A run-skill log in the mounts fixture's window: run-skill's header, then
+ * `lines` (run records and the run's outcome).
+ */
+const writeSkillLog = async (
+  root: string,
+  name: string,
+  lines: string[]
+): Promise<void> => {
+  const header = [
+    "skill: line-count v1",
+    "network: false",
+    `input: {"file":"/input/x"}`,
+  ];
+  await writeFile(
+    join(root, "logs", "line-count", name),
+    `${[...header, ...lines].join("\n")}\n`
+  );
+};
+
+const logMounts = (
+  sessionId: string,
+  root: string,
+  log: string
+): string[] | undefined =>
+  auditRun(sessionId, root).mounts.find(
+    (entry) => entry.log === `logs/line-count/${log}`
+  )?.mounts;
+
+test("a mount whose file name contains spaces is listed", async () => {
+  const { root, sessionId } = await install("mounts");
+  const log = "run-2026-10-09T10-00-03.000Z.log";
+  const mount = `${root}/demo/data/Výpis z účtu.csv -> /input/Výpis z účtu.csv (ro)`;
+  await writeSkillLog(root, log, [
+    "sandbox: container=frk-0a1b2c3d4e5f exit=0 durationMs=90",
+    `mount: ${mount}`,
+    "exit: 0, 90ms",
+    "stdout:",
+    "{}",
+    "stderr:",
+    "",
+  ]);
+  assert.deepEqual(logMounts(sessionId, root, log), [mount]);
+});
+
+test("mount lines inside a failed run's error message are not mounts", async () => {
+  const { root, sessionId } = await install("mounts");
+  const log = "run-2026-10-09T10-00-03.000Z.log";
+  const mount = `${root}/demo/data/bank.csv -> /input/bank.csv (ro)`;
+  await writeSkillLog(root, log, [
+    "sandbox: container=frk-0a1b2c3d4e5f exit=125 durationMs=40",
+    `mount: ${mount}`,
+    // run-skill logs the error message, which may quote docker's stderr.
+    "error: docker run failed (exit 125): docker: invalid spec",
+    "mount: /Users/me/.ssh/id_rsa -> /input/id_rsa (ro)",
+  ]);
+  assert.deepEqual(logMounts(sessionId, root, log), [mount]);
 });
 
 test("transcript calls missing from the logs are violations", async () => {

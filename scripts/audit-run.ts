@@ -70,8 +70,10 @@ const SHELL_TOOLS: Record<string, true> = { Bash: true, PowerShell: true };
 const RUN_EXAMPLES = "scripts/run-examples.ts";
 const RUN_SKILL = "scripts/run-skill.ts";
 const MOUNT_FLAG = /^--(mount|output)(=|$)/;
-// Where a run-skill log switches from run records to the skill's stdout.
-const SKILL_STDOUT = "\nstdout:\n";
+// Where a run-skill log switches from run records to the run's outcome: the
+// `exit:` line before the skill's stdout, or the `error:` line of a failed run
+// (its message may quote docker stderr).
+const RECORDS_END = /\n(?:exit: |error: |stdout:\n)/;
 const SKILL_CODE_DIRS = ["work", ".claude/skills"];
 const SKILL_CODE_REF = /(^|[\s/=:<>])(work|\.claude\/skills)(\/|$)/;
 const CHANGE_DIR: Record<string, true> = {
@@ -476,8 +478,9 @@ const readRunLogs = (root: string, from: number, to: number): RunLog[] => {
         continue;
       }
       const text = readFileSync(path.join(logsDir, skill, name), "utf8");
-      // Records precede the skill's own stdout, which could imitate them.
-      const [records = ""] = text.split(SKILL_STDOUT, 1);
+      // Records precede the outcome and the skill's own output, which could
+      // imitate them.
+      const [records = ""] = text.split(RECORDS_END, 1);
       const mounts = records.split("\n").flatMap((line) => {
         const [, host, container, mode] = MOUNT_RECORD.exec(line) ?? [];
         return container === undefined || container === SKILL_MOUNT

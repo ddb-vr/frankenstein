@@ -42,7 +42,11 @@ export const parseInput = (input: unknown): LineCountInput => {
   return { encoding, file: input.file };
 };
 
-/** Decodes strictly: a wrong encoding is an error, not mojibake. */
+/**
+ * Decodes strictly: bytes invalid in `encoding` (e.g. non-UTF-8 input read
+ * as UTF-8) are an error. Single-byte encodings such as windows-1250 map
+ * every byte, so a wrong one of those still yields mojibake, not an error.
+ */
 export const decode = (bytes: Uint8Array, encoding: string): string => {
   let decoder: TextDecoder;
   try {

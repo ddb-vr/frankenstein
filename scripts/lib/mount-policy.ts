@@ -8,7 +8,13 @@
 // - Always denied, even inside an allowed root: `.env*`, `*.pem`, `.git`,
 //   `.claude` (anywhere in the path or inside a mounted directory), the repo's
 //   `scripts/` and `work/.locks/`, and the home directory (or an ancestor).
-// - The output must resolve inside the repo's `out/` (created on demand).
+// - Only regular files and directories are mounted: sockets, FIFOs and
+//   devices are denied, also inside a mounted directory. The directory scan
+//   does not follow symlinks (a link inside the mount is not walked).
+// - A `:` in a mount or output path is denied: it would split docker's
+//   `-v host:container:ro` argument.
+// - The output must resolve strictly below the repo's `out/` (not `out/`
+//   itself; created on demand).
 
 import {
   mkdirSync,
@@ -109,6 +115,16 @@ const isWithin = (child: string, parent: string): boolean => {
   );
 };
 
+/** `child` is strictly below `parent` (not `parent` itself). */
+const isBelow = (child: string, parent: string): boolean =>
+  path.relative(parent, child) !== "" && isWithin(child, parent);
+
+/** A `:` past the root (a Windows drive letter is fine): docker's `-v` separator. */
+const hasColon = (file: string): boolean =>
+  file.slice(path.parse(file).root.length).includes(":");
+
+const COLON_REASON = "its path contains ':', which docker -v cannot mount";
+
 /** Case-insensitive `isWithin`: over-denies rather than misses on macOS/Windows. */
 const isWithinFolded = (child: string, parent: string): boolean =>
   isWithin(child.toLowerCase(), parent.toLowerCase());
@@ -130,27 +146,52 @@ const protectedPathReason = (
   }
 };
 
+/**
+ * A denied name or a socket, FIFO or device anywhere inside directory
+ * `real`. Symlinks are not followed: no loops, no walking out of the mount.
+ */
+const deniedEntryReason = (real: string): string | undefined => {
+  const pending = [""];
+  let relativeDir = pending.pop();
+  while (relativeDir !== undefined) {
+    for (const entry of readdirSync(path.join(real, relativeDir), {
+      withFileTypes: true,
+    })) {
+      const relative = path.join(relativeDir, entry.name);
+      const shown = relative.replaceAll("\\", "/");
+      if (DENIED_NAME.test(entry.name)) {
+        return `the directory contains ${shown}, which is never mounted (.env*, *.pem, .git, .claude)`;
+      }
+      const special =
+        entry.isSocket() ||
+        entry.isFIFO() ||
+        entry.isBlockDevice() ||
+        entry.isCharacterDevice();
+      if (special) {
+        return `the directory contains ${shown}, which is not a regular file or directory`;
+      }
+      if (entry.isDirectory()) {
+        pending.push(relative);
+      }
+    }
+    relativeDir = pending.pop();
+  }
+};
+
 /** A denied name below `allowedRoot` or anywhere inside a directory mount. */
 const deniedNameReason = (
   real: string,
-  allowedRoot: string
+  allowedRoot: string,
+  isDirectory: boolean
 ): string | undefined => {
-  const candidates = [path.relative(allowedRoot, real)];
-  if (statSync(real).isDirectory()) {
-    candidates.push(...readdirSync(real, { recursive: true }).map(String));
+  const segment = path
+    .relative(allowedRoot, real)
+    .split(PATH_SEPARATORS)
+    .find((part) => DENIED_NAME.test(part));
+  if (segment !== undefined) {
+    return `${segment} is never mounted (.env*, *.pem, .git, .claude)`;
   }
-  for (const [index, candidate] of candidates.entries()) {
-    const segment = candidate
-      .split(PATH_SEPARATORS)
-      .find((part) => DENIED_NAME.test(part));
-    if (segment !== undefined) {
-      const what =
-        index === 0
-          ? `${segment} is`
-          : `the directory contains ${candidate.replaceAll("\\", "/")}, which is`;
-      return `${what} never mounted (.env*, *.pem, .git, .claude)`;
-    }
-  }
+  return isDirectory ? deniedEntryReason(real) : undefined;
 };
 
 /** Absolute path of one `--mount`; throws `mount denied: …` otherwise. */
@@ -163,11 +204,23 @@ export const checkMount = (given: string, policy: MountPolicy): string => {
       `${path.basename(absolute)} is never mounted (.env*, *.pem, .git, .claude)`
     );
   }
+  if (path.basename(absolute).includes(":")) {
+    throw deny(COLON_REASON);
+  }
   let real: string;
   try {
     real = realpathSync.native(absolute);
   } catch (error) {
     throw deny("it does not exist", error);
+  }
+  if (hasColon(real)) {
+    throw deny(
+      `${COLON_REASON}${real === absolute ? "" : ` (resolved: ${real})`}`
+    );
+  }
+  const stats = statSync(real);
+  if (!(stats.isFile() || stats.isDirectory())) {
+    throw deny("it is not a regular file or directory");
   }
   const protectedReason = protectedPathReason(real, policy);
   if (protectedReason !== undefined) {
@@ -186,7 +239,7 @@ export const checkMount = (given: string, policy: MountPolicy): string => {
       `it is outside the allowed roots (${roots}; ${ALLOWED_ROOTS_ENV} in .env)${real === absolute ? "" : ` after resolving symlinks to ${real}`}`
     );
   }
-  const nameReason = deniedNameReason(real, allowedRoot);
+  const nameReason = deniedNameReason(real, allowedRoot, stats.isDirectory());
   if (nameReason !== undefined) {
     throw deny(nameReason);
   }
@@ -203,8 +256,8 @@ const existingAncestor = (file: string): string => {
 };
 
 /**
- * Real path of the `--output` directory inside `out/`, created on demand
- * only once the target is known to stay inside it; throws
+ * Real path of the `--output` directory strictly below `out/`, created on
+ * demand only once the target is known to stay below it; throws
  * `output denied: …` otherwise.
  */
 export const resolveOutput = (given: string, policy: MountPolicy): string => {
@@ -216,20 +269,41 @@ export const resolveOutput = (given: string, policy: MountPolicy): string => {
   if (!(isWithin(absolute, lexicalOut) || isWithin(absolute, realOut))) {
     throw deny(`it must be inside ${OUTPUT_ROOT}/`);
   }
+  const itself = `it must be a directory below ${OUTPUT_ROOT}/, not ${OUTPUT_ROOT}/ itself`;
+  if (!(isBelow(absolute, lexicalOut) || isBelow(absolute, realOut))) {
+    throw deny(itself);
+  }
+  if (hasColon(absolute)) {
+    throw deny(COLON_REASON);
+  }
   mkdirSync(lexicalOut, { recursive: true });
   if (realPathOrSelf(lexicalOut) !== realOut) {
     throw deny(`${OUTPUT_ROOT}/ must be a real directory, not a symlink`);
   }
   // Checked before creating anything, so mkdir cannot follow a symlink out.
-  if (!isWithin(realPathOrSelf(existingAncestor(absolute)), realOut)) {
+  const ancestor = existingAncestor(absolute);
+  const realAncestor = realPathOrSelf(ancestor);
+  if (!isWithin(realAncestor, realOut)) {
     throw deny(`it resolves outside ${OUTPUT_ROOT}/ through a symlink`);
+  }
+  if (ancestor === absolute && !isBelow(realAncestor, realOut)) {
+    throw deny(itself);
+  }
+  if (hasColon(realAncestor)) {
+    throw deny(COLON_REASON);
   }
   const existing = statSync(absolute, { throwIfNoEntry: false });
   if (existing !== undefined && !existing.isDirectory()) {
     throw deny("it is not a directory");
   }
   mkdirSync(absolute, { recursive: true });
-  return realpathSync.native(absolute);
+  const real = realpathSync.native(absolute);
+  if (!isBelow(real, realOut)) {
+    throw deny(
+      `it resolves outside ${OUTPUT_ROOT}/ or to ${OUTPUT_ROOT}/ itself`
+    );
+  }
+  return real;
 };
 
 /**

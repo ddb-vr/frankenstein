@@ -32,9 +32,10 @@ them, never change them.
   `/skill/fixtures/input/<file>` in tests. Never hardcode either prefix; always open the path given in the input.
 - If `/output` exists, write large results there as files and keep stdout a compact JSON summary (counts, totals,
   file names); never print file contents or full row lists to stdout. Without `/output`, return only the summary.
-- Decode text explicitly: `new TextDecoder(encoding, { fatal: true })` with the detected or stated encoding (e.g.
-  `windows-1250` for Czech bank exports; `node:24-slim` supports it). Never rely on a default `utf8` read for user
-  files.
+- Decode text explicitly: `new TextDecoder(encoding, { fatal: true })` with the `encoding` given in the JSON input,
+  default `utf-8` (e.g. `windows-1250` for Czech bank exports; `node:24-slim` supports it). `fatal` only rejects bytes
+  invalid for that encoding; single-byte encodings like `windows-1250` never fail. Never rely on a default `utf8` read
+  for user files.
 - Node 24 built-ins only, no npm packages. Relative imports use the `.ts` extension. Erasable TypeScript only (no
   `enum`, `namespace`, parameter properties).
 - Tests use `node:test` and `node:assert/strict`, import from `../scripts/*.ts`, and never use the network.

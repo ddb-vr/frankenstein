@@ -27,11 +27,17 @@ node scripts/run-skill.ts <skill> '{"statement":"/input/bank.csv"}' --mount demo
 ```
 
 - `--mount <path>` (repeatable) mounts a file or directory read-only at `/input/<basename>`; put those paths in the
-  JSON input. Paths must lie inside `INPUT_ALLOWED_ROOTS` (default `demo/data`, `inputs`); secrets, `.git`, `.claude`,
-  `scripts/` and the home directory are always refused. A refusal (`mount denied: …`) is final: ask the user to copy the
-  file into `inputs/` instead.
-- `--output out/<run>` gives the skill a writable `/output`. Answer from the skill's compact stdout summary and point
-  the user to the files in `out/<run>/`; do not open them yourself.
+  JSON input. Paths must lie inside `INPUT_ALLOWED_ROOTS` (default `demo/data`, `inputs`). On `mount denied: …`:
+  - secrets (`.env*`, `*.pem`), `.git`, `.claude`, the repo's `scripts/` or `work/.locks/`, the home directory: final,
+    never work around it.
+  - outside the allowed roots: ask the user to copy the file into an allowed root (`inputs/` by default, or a directory
+    `INPUT_ALLOWED_ROOTS` in `.env` lists).
+  - path does not exist: fix the typo or ask the user for the right path.
+  - same name as another mount (both would be `/input/<name>`): rename or copy one of them.
+  - name contains `:`: copy the file under a name without `:`.
+- `--output out/<run>` gives the skill a writable `/output`; it must be a subdirectory of `out/`, never `out` itself.
+  Answer from the skill's compact stdout summary and point the user to the files in `out/<run>/`; do not open them
+  yourself.
 - When the task involves a user file, pass its repo-relative path (never its content) to the `prd` agent; it may read
   the first few lines to learn the format (headers, separator, encoding).
 
@@ -68,8 +74,9 @@ answers. Nothing is locked until the last step, so every loop back to **Write** 
     (step 3 format) and pass the answers too. Then review again.
   - After 3 rejects, stop and show the user the reasons.
 6. **Confirm and lock.** Read `work/<skill>/examples.json` (the file that gets locked, not the `prd` reply) and show
-   the user the Goal sentence from `PRD.md` and a Markdown table of its examples (name | input | expected). Ask "Is
-   this correct?" with the options *Yes, lock it* and *Needs changes*.
+   the user the Goal sentence from `PRD.md`, a Markdown table of its examples (name | input | expected) and the content
+   of each synthetic file in `work/<skill>/fixtures/input/` (locked too). Ask "Is this correct?" with the options
+   *Yes, lock it* and *Needs changes*.
   - On *Yes*, run `node scripts/lock.ts <skill>`. Intake is done. Continue with the lifecycle at **Open issue**.
   - On corrections, go back to step 4 with them, then step 5 (review again), then confirm again.
   - If the PRD's Network section says Needed, tell the user that every listed domain must be in

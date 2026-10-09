@@ -14,6 +14,7 @@ import {
   buildDockerArgs,
   formatRunRecord,
   resolveSkillDir,
+  runInSandbox,
   SANDBOX_IMAGE,
 } from "./sandbox.ts";
 
@@ -23,6 +24,9 @@ const NOT_FOUND = /skill directory not found/;
 const REFUSED_MOUNT = /refusing to mount/;
 const MOUNT_COLLISION =
   /mount name collision: demo\/data\/bank\.csv and inputs\/bank\.csv would both be \/input\/bank\.csv/;
+const NO_FILE_NAME = /cannot mount demo\/a:b: no usable file name/;
+const SOURCE_NOT_FOUND = /mount source not found: /;
+const OUTPUT_NOT_FOUND = /output directory not found: /;
 
 const base = {
   command: ["/skill/x.ts"],
@@ -135,6 +139,36 @@ test("two inputs with the same basename are an error", () => {
         "frk-t"
       ),
     MOUNT_COLLISION
+  );
+});
+
+test("an input whose basename contains a colon is refused", () => {
+  // `:` would split the `-v host:container:mode` spec.
+  assert.throws(
+    () => buildDockerArgs({ ...base, mounts: ["demo/a:b"] }, "frk-t"),
+    NO_FILE_NAME
+  );
+});
+
+test("runInSandbox refuses a missing input or a non-directory output before docker", (t) => {
+  const dir = realpathSync.native(
+    mkdtempSync(path.join(tmpdir(), "sandbox-sources-"))
+  );
+  t.after(() => rmSync(dir, { force: true, recursive: true }));
+  const file = path.join(dir, "out.txt");
+  writeFileSync(file, "");
+  // Synchronous throws: no promise, so no docker process was started.
+  assert.throws(
+    () => runInSandbox({ ...base, mounts: [path.join(dir, "missing.csv")] }),
+    SOURCE_NOT_FOUND
+  );
+  assert.throws(
+    () => runInSandbox({ ...base, outputDir: file }),
+    OUTPUT_NOT_FOUND
+  );
+  assert.throws(
+    () => runInSandbox({ ...base, outputDir: path.join(dir, "missing") }),
+    OUTPUT_NOT_FOUND
   );
 });
 

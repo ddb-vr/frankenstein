@@ -16,8 +16,12 @@ export const SANDBOX_IMAGE = "frankenstein-sandbox";
 export const SKILL_MOUNT = "/skill";
 export const INPUT_MOUNT = "/input";
 export const OUTPUT_MOUNT = "/output";
-/** One `mount: <host> -> <container> (ro|rw)` line of a run record. */
-export const MOUNT_RECORD = /^mount: (.+) -> (\/\S*) \((ro|rw)\)$/;
+/**
+ * One `mount: <host> -> <container> (ro|rw)` line of a run record. The
+ * container path may contain spaces (`/input/<basename>`); a basename never
+ * contains `/`, so the greedy host group still splits at the right ` -> `.
+ */
+export const MOUNT_RECORD = /^mount: (.+) -> (\/.*) \((ro|rw)\)$/;
 /** `-v` value: host path (may contain `:` on Windows), container path, mode. */
 const VOLUME_SPEC = /^(.+):(\/[^:]*):(ro|rw)$/;
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");

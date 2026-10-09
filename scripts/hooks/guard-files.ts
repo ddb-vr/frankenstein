@@ -1,5 +1,6 @@
 // PreToolUse hook (matcher `Write|Edit|MultiEdit|NotebookEdit`): blocks file
-// tool writes to locked acceptance examples, review verdicts (written only by
+// tool writes to locked acceptance examples and their input files
+// (`work/<skill>/fixtures/input/`, both pinned by the lock), review verdicts (written only by
 // `capture-review.ts`), lock files, run state, installed and disabled skills, Claude
 // settings, repo scripts, the registry and skill output in `out/`. The target is matched both as
 // given and with symlinks resolved, so a link (`work/x/self -> .`) cannot
@@ -59,6 +60,7 @@ const PROTECTED: readonly { entry: string; reason: string }[] = [
 ];
 
 const WORK_JSON = /^work\/([^/]+)\/(examples|review)\.json$/;
+const FIXTURE_INPUT = /^work\/([^/]+)\/fixtures\/input(?:\/|$)/;
 
 /** Why a write to repo-relative `relative` is denied, if it is. */
 const protectedReason = (
@@ -73,6 +75,13 @@ const protectedReason = (
   const [, skill, kind] = WORK_JSON.exec(relative) ?? [];
   if (kind === "examples" && context.exists(`work/.locks/${skill}.json`)) {
     return `Blocked: work/${skill}/examples.json is locked (the user confirmed it as the source of truth). Build against it unchanged; report a wrong example to the main agent instead.`;
+  }
+  const [, inputSkill] = FIXTURE_INPUT.exec(relative) ?? [];
+  if (
+    inputSkill !== undefined &&
+    context.exists(`work/.locks/${inputSkill}.json`)
+  ) {
+    return `Blocked: work/${inputSkill}/fixtures/input/ is locked with the examples (the user confirmed them as the source of truth). Build against the input files unchanged; report a wrong input file to the main agent instead.`;
   }
   if (kind === "review") {
     return `Blocked: work/${skill}/review.json is written only by the capture-review hook from the skill-reviewer's final \`verdict\` block. Invoke the skill-reviewer instead.`;

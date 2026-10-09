@@ -78,7 +78,12 @@ Input: the request and all answers, plus any corrections or reviewer reasons.
 - If the skill needs network data, expected values must match data you can record as fixtures. Do not guess live values.
 - If the skill reads files, write small **synthetic** test files to `work/<skill>/fixtures/input/` in the user's format
   (invented names and amounts, never rows from the user's files) and reference them in inputs as
-  `/skill/fixtures/input/<file>`. They are part of the locked examples. The Write tool writes UTF-8 only: for another
-  encoding, state it under Inputs; the builder's unit tests cover decoding it with byte-level test data.
+  `/skill/fixtures/input/<file>`. They are part of the locked examples. The Write tool writes UTF-8 only, while the
+  user's real file may use another encoding (e.g. `windows-1250`): make the encoding an input field (`"encoding"`,
+  default `utf-8`) and list it under Inputs. Examples using fixtures pass no `encoding` or `"utf-8"`; state the
+  encoding you detected in the user's file so the real call passes it. The builder's unit tests cover decoding other
+  encodings with byte-level test data.
 
-Reply with the skill name, the Goal sentence and a table of the examples: name, input, expected. Keep it short.
+Reply with the skill name, the Goal sentence and a table of the examples: name, input, expected. Below the table show
+the full content of each synthetic fixture file (they are small), so the user confirms the rows behind the expected
+values. Keep it short.

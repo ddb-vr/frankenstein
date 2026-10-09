@@ -7,7 +7,7 @@
 
 import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
-import { sha256File } from "../lock.ts";
+import { hashExamples } from "../lock.ts";
 import { SKILL_NAME } from "./examples.ts";
 import {
   applyChange,
@@ -422,7 +422,7 @@ export const rollbackSkill = (
       }
       saveEntry(deps.root, readRegistry(deps.root), {
         ...entry,
-        examplesHash: sha256File(path.join(absolute, "examples.json")),
+        examplesHash: hashExamples(absolute),
         history: [
           ...entry.history,
           historyItem(deps, "rollback", change.head, { issue, version }),

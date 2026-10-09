@@ -61,7 +61,7 @@ import {
   skillTag,
   versionNumber,
 } from "./lib/registry.ts";
-import { examplesPath, readLock, sha256File } from "./lock.ts";
+import { examplesPath, hashExamples, readLock } from "./lock.ts";
 
 const POSITIVE_INTEGER = /^[1-9]\d*$/;
 const NOT_INSTALLED = new Set(["issue.json", "progress.md", "review.json"]);
@@ -118,9 +118,9 @@ const checkLock = (root: string, skill: string): string => {
   if (!existsSync(file)) {
     throw new Error(`work/${skill}/examples.json not found`);
   }
-  if (sha256File(file) !== lock.sha256) {
+  if (hashExamples(path.dirname(file)) !== lock.sha256) {
     throw new Error(
-      `work/${skill}/examples.json changed since it was locked at ${lock.lockedAt}`
+      `work/${skill}/examples.json or its input files (work/${skill}/fixtures/input/) changed since they were locked at ${lock.lockedAt}`
     );
   }
   return lock.sha256;
