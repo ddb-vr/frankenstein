@@ -13,26 +13,26 @@ s.r.o.** (IČO 26779226, account 2801234567/2010). Reference date for session 2:
 
 ## Session 1 – which invoices are paid
 
-| Invoice     | Customer                        | Due        |    Amount |      Paid | Outstanding | Status         | Bank rows      | Trap                                         |
-| ----------- | ------------------------------- | ---------- | --------: | --------: | ----------: | -------------- | -------------- | -------------------------------------------- |
-| FV-2026-031 | Hotel Zlatá Jeřabina s.r.o.     | 03.08.2026 | 18 150,00 |      0,00 |   18 150,00 | unpaid         | –              |                                              |
-| FV-2026-032 | Pekárna U Mlýna s.r.o.          | 05.08.2026 | 14 520,00 | 14 520,00 |        0,00 | paid           | 2              | same amount as FV-2026-044, VS decides       |
-| FV-2026-033 | Truhlárna Dubový List s.r.o.    | 10.08.2026 | 24 200,00 | 24 200,00 |        0,00 | paid           | 4, 17          | two instalments (2nd one late)               |
-| FV-2026-034 | Hotel Zlatá Jeřabina s.r.o.     | 12.08.2026 |  7 260,00 |      0,00 |    7 260,00 | unpaid         | –              |                                              |
-| FV-2026-035 | Autoservis Rychlé Kolo s.r.o.   | 17.08.2026 | 31 460,00 | 15 000,00 |   16 460,00 | partially paid | 9              | partial payment, rest never came             |
-| FV-2026-036 | Zahradnictví Na Výsluní s.r.o.  | 19.08.2026 |  6 655,00 |  6 655,00 |        0,00 | paid           | 12 (part)      | two invoices in one transfer                 |
-| FV-2026-037 | Cukrárna Sladký Čtvereček s.r.o. | 21.08.2026 |  8 470,00 |  9 470,00 |   −1 000,00 | overpaid       | 8              | overpayment by 1 000,00                      |
-| FV-2026-038 | Pivovar Žabí Louka s.r.o.       | 24.08.2026 | 12 705,00 |      0,00 |   12 705,00 | unpaid         | – (not 11)     | outgoing row 11 has the same VS              |
-| FV-2026-039 | Zahradnictví Na Výsluní s.r.o.  | 26.08.2026 |  4 235,00 |  4 235,00 |        0,00 | paid           | 12 (part)      | two invoices in one transfer                 |
-| FV-2026-040 | Knihkupectví Šedá Sova s.r.o.   | 28.08.2026 |  9 075,00 |      0,00 |    9 075,00 | unpaid         | –              |                                              |
-| FV-2026-041 | Fitness Železná Kotva s.r.o.    | 02.09.2026 | 16 940,00 | 16 940,00 |        0,00 | paid           | 15             |                                              |
-| FV-2026-042 | Elektro Světluška s.r.o.        | 07.09.2026 | 11 495,00 | 11 495,00 |        0,00 | paid           | 18             | wrong VS 2026024 (digits swapped)            |
-| FV-2026-043 | Květinářství Pod Věží s.r.o.    | 11.09.2026 |  3 630,00 |  3 630,00 |        0,00 | paid           | 20             |                                              |
-| FV-2026-044 | Pekárna U Mlýna s.r.o.          | 15.09.2026 | 14 520,00 | 14 520,00 |        0,00 | paid           | 22             | same amount as FV-2026-032, VS decides       |
-| FV-2026-045 | Truhlárna Dubový List s.r.o.    | 18.09.2026 |  7 865,00 |  7 865,00 |        0,00 | paid           | 24             | no VS, invoice number in the message         |
-| FV-2026-046 | Kavárna Modrá Hvězda s.r.o.     | 21.09.2026 |  5 445,00 |      0,00 |    5 445,00 | unpaid         | –              |                                              |
-| FV-2026-047 | Fitness Železná Kotva s.r.o.    | 25.09.2026 |  9 680,00 |      0,00 |    9 680,00 | unpaid         | –              |                                              |
-| FV-2026-048 | Cukrárna Sladký Čtvereček s.r.o. | 29.09.2026 |  6 050,00 |  6 050,00 |        0,00 | paid           | 28             | no deduction of the earlier overpayment      |
+| Invoice     | Customer                         | Due        |    Amount |      Paid | Outstanding | Status         | Bank rows  | Trap                                    |
+|-------------|----------------------------------|------------|----------:|----------:|------------:|----------------|------------|-----------------------------------------|
+| FV-2026-031 | Hotel Zlatá Jeřabina s.r.o.      | 03.08.2026 | 18 150,00 |      0,00 |   18 150,00 | unpaid         | –          |                                         |
+| FV-2026-032 | Pekárna U Mlýna s.r.o.           | 05.08.2026 | 14 520,00 | 14 520,00 |        0,00 | paid           | 2          | same amount as FV-2026-044, VS decides  |
+| FV-2026-033 | Truhlárna Dubový List s.r.o.     | 10.08.2026 | 24 200,00 | 24 200,00 |        0,00 | paid           | 4, 17      | two instalments (2nd one late)          |
+| FV-2026-034 | Hotel Zlatá Jeřabina s.r.o.      | 12.08.2026 |  7 260,00 |      0,00 |    7 260,00 | unpaid         | –          |                                         |
+| FV-2026-035 | Autoservis Rychlé Kolo s.r.o.    | 17.08.2026 | 31 460,00 | 15 000,00 |   16 460,00 | partially paid | 9          | partial payment, rest never came        |
+| FV-2026-036 | Zahradnictví Na Výsluní s.r.o.   | 19.08.2026 |  6 655,00 |  6 655,00 |        0,00 | paid           | 12 (part)  | two invoices in one transfer            |
+| FV-2026-037 | Cukrárna Sladký Čtvereček s.r.o. | 21.08.2026 |  8 470,00 |  9 470,00 |   −1 000,00 | overpaid       | 8          | overpayment by 1 000,00                 |
+| FV-2026-038 | Pivovar Žabí Louka s.r.o.        | 24.08.2026 | 12 705,00 |      0,00 |   12 705,00 | unpaid         | – (not 11) | outgoing row 11 has the same VS         |
+| FV-2026-039 | Zahradnictví Na Výsluní s.r.o.   | 26.08.2026 |  4 235,00 |  4 235,00 |        0,00 | paid           | 12 (part)  | two invoices in one transfer            |
+| FV-2026-040 | Knihkupectví Šedá Sova s.r.o.    | 28.08.2026 |  9 075,00 |      0,00 |    9 075,00 | unpaid         | –          |                                         |
+| FV-2026-041 | Fitness Železná Kotva s.r.o.     | 02.09.2026 | 16 940,00 | 16 940,00 |        0,00 | paid           | 15         |                                         |
+| FV-2026-042 | Elektro Světluška s.r.o.         | 07.09.2026 | 11 495,00 | 11 495,00 |        0,00 | paid           | 18         | wrong VS 2026024 (digits swapped)       |
+| FV-2026-043 | Květinářství Pod Věží s.r.o.     | 11.09.2026 |  3 630,00 |  3 630,00 |        0,00 | paid           | 20         |                                         |
+| FV-2026-044 | Pekárna U Mlýna s.r.o.           | 15.09.2026 | 14 520,00 | 14 520,00 |        0,00 | paid           | 22         | same amount as FV-2026-032, VS decides  |
+| FV-2026-045 | Truhlárna Dubový List s.r.o.     | 18.09.2026 |  7 865,00 |  7 865,00 |        0,00 | paid           | 24         | no VS, invoice number in the message    |
+| FV-2026-046 | Kavárna Modrá Hvězda s.r.o.      | 21.09.2026 |  5 445,00 |      0,00 |    5 445,00 | unpaid         | –          |                                         |
+| FV-2026-047 | Fitness Železná Kotva s.r.o.     | 25.09.2026 |  9 680,00 |      0,00 |    9 680,00 | unpaid         | –          |                                         |
+| FV-2026-048 | Cukrárna Sladký Čtvereček s.r.o. | 29.09.2026 |  6 050,00 |  6 050,00 |        0,00 | paid           | 28         | no deduction of the earlier overpayment |
 
 Totals: 10 paid, 1 overpaid, 1 partially paid, 6 unpaid. Outstanding 78 775,00 CZK over 7 invoices; overpaid
 1 000,00 CZK (FV-2026-037).
@@ -65,12 +65,12 @@ Totals: 10 paid, 1 overpaid, 1 partially paid, 6 unpaid. Outstanding 78 775,00 C
 
 Days overdue count from the due date. Strictly more than 30 days: due date 08.09.2026 or earlier.
 
-| Customer                      | E-mail                            | Invoices                                    | Days overdue | Outstanding |
-| ----------------------------- | --------------------------------- | ------------------------------------------- | -----------: | ----------: |
+| Customer                      | E-mail                            | Invoices                                        | Days overdue | Outstanding |
+|-------------------------------|-----------------------------------|-------------------------------------------------|-------------:|------------:|
 | Hotel Zlatá Jeřabina s.r.o.   | recepce.zlatajerabina@example.com | FV-2026-031 (18 150,00), FV-2026-034 (7 260,00) |       67, 58 |   25 410,00 |
-| Autoservis Rychlé Kolo s.r.o. | autoservis.rychlekolo@example.com | FV-2026-035 (16 460,00 of 31 460,00)        |           53 |   16 460,00 |
-| Pivovar Žabí Louka s.r.o.     | pivovar.zabilouka@example.com     | FV-2026-038 (12 705,00)                     |           46 |   12 705,00 |
-| Knihkupectví Šedá Sova s.r.o. | knihkupectvi.sedasova@example.com | FV-2026-040 (9 075,00)                      |           42 |    9 075,00 |
+| Autoservis Rychlé Kolo s.r.o. | autoservis.rychlekolo@example.com | FV-2026-035 (16 460,00 of 31 460,00)            |           53 |   16 460,00 |
+| Pivovar Žabí Louka s.r.o.     | pivovar.zabilouka@example.com     | FV-2026-038 (12 705,00)                         |           46 |   12 705,00 |
+| Knihkupectví Šedá Sova s.r.o. | knihkupectvi.sedasova@example.com | FV-2026-040 (9 075,00)                          |           42 |    9 075,00 |
 
 4 reminders (one per customer), 5 invoices, 63 650,00 CZK in total.
 
