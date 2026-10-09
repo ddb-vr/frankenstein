@@ -78,14 +78,19 @@ npm run sandbox:build     # build the Docker sandbox image
 claude                    # start Claude Code in the repo root
 ```
 
-Then try a task on the sample data in [`demo/data/orders.csv`](demo/data/orders.csv):
+Then try our demo case on the synthetic data in [`demo/data/`](demo/data): a Czech bank export (windows-1250) and a
+list of issued invoices. Use the exact prompts in [`demo/tasks.md`](demo/tasks.md), each in a fresh session:
 
-- *"How much did I earn per month from completed orders in demo/data/orders.csv?"* No skill does that yet: it asks you
-  a few questions, builds, tests, reviews and installs one, then answers.
-- *"Who are my repeat customers in demo/data/orders.csv?"* An installed skill answers straight away, in the sandbox.
+1. *"Which of my invoices have been paid and which haven't?"* No skill does that yet: it asks you a few questions,
+   builds, tests, reviews and installs a payment-matching skill, then answers.
+2. *"Which customers have owed me money for more than 30 days? Please draft payment reminders."* It finds the first
+   skill, builds only the reminder part on top of it, and answers for a fraction of the cost.
 
-Afterwards look at `npm run skills -- list`, the new commit and tag in `git log --oneline --decorate -3` and the build
-issue in `tracker/issues/`.
+Prepared answers to its questions are in [`demo/answers.md`](demo/answers.md), the expected results in
+[`demo/answer-key.md`](demo/answer-key.md). If the skills from our recording are already installed, start from zero
+with `npm run demo:reset -- --yes` (in local mode it only commits locally; nothing is pushed). Afterwards look at
+`npm run skills -- list`, the new commits and tags in `git log --oneline --decorate -3` and the build issues in
+`tracker/issues/`.
 
 ### Tracker modes
 
