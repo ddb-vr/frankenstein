@@ -7,7 +7,7 @@
 *Ask it something it can't do. It stitches together a new skill, shocks it to life in a sandbox,
 lets a reviewer check it for monsters, and only then lets it walk.*
 
-![Node](https://img.shields.io/badge/node-%E2%89%A524.3-339933?logo=node.js&logoColor=white)
+![Node](https://img.shields.io/badge/node-%E2%89%A524.x-339933?logo=node.js&logoColor=white)
 ![Docker](https://img.shields.io/badge/sandbox-Docker-2496ED?logo=docker&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/built%20on-Claude%20Code-D97757)
 ![Hackathon](https://img.shields.io/badge/made%20at-a%20hackathon-ff69b4)
