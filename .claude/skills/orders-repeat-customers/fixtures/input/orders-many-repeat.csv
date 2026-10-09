@@ -1,0 +1,16 @@
+order_id;date;customer_email;customer_name;total_czk;status
+3001;01.09.2026;u1@example.com;Uživatel Jedna;100,00;completed
+3002;01.09.2026;u1@example.com;Uživatel Jedna;100,00;completed
+3003;02.09.2026;u1@example.com;Uživatel Jedna;100,00;completed
+3004;02.09.2026;u1@example.com;Uživatel Jedna;100,00;completed
+3005;03.09.2026;u2@example.com;Uživatel Dva;100,00;completed
+3006;03.09.2026;u2@example.com;Uživatel Dva;100,00;completed
+3007;04.09.2026;u2@example.com;Uživatel Dva;100,00;completed
+3008;04.09.2026;u3@example.com;Uživatel Tři;200,00;completed
+3009;05.09.2026;u3@example.com;Uživatel Tři;200,00;completed
+3010;05.09.2026;u4@example.com;Uživatel Čtyři;150,00;completed
+3011;06.09.2026;u4@example.com;Uživatel Čtyři;150,00;completed
+3012;06.09.2026;u5@example.com;Uživatel Pět;100,00;completed
+3013;07.09.2026;u5@example.com;Uživatel Pět;100,00;completed
+3014;07.09.2026;u6@example.com;Uživatel Šest;50,00;completed
+3015;08.09.2026;u6@example.com;Uživatel Šest;50,00;completed

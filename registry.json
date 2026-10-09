@@ -3,6 +3,11 @@
     {
       "enabled": true,
       "examplesHash": "5661a3ab20e5c518fde60be2e35ed520760234ad7f58687be7e8ea7fd7ffb346",
+      "installedAt": "2026-10-08T21:48:09.822Z",
+      "issue": 7,
+      "name": "ico-validator",
+      "network": false,
+      "version": "v1",
       "history": [
         {
           "action": "install",
@@ -12,10 +17,24 @@
           "issue": 7,
           "version": "v1"
         }
+      ]
+    },
+    {
+      "enabled": true,
+      "examplesHash": "0aaabd865d813b4098c2341adae0406214941e8ab2656d7025b0bf97c23dbda9",
+      "history": [
+        {
+          "action": "install",
+          "at": "2026-10-09T00:53:09.120Z",
+          "commit": "1b00d5a1dca9661abc591b77f25b61a1b3deac3a",
+          "costUsd": 1.116511,
+          "issue": 12,
+          "version": "v1"
+        }
       ],
-      "installedAt": "2026-10-08T21:48:09.822Z",
-      "issue": 7,
-      "name": "ico-validator",
+      "installedAt": "2026-10-09T00:53:09.120Z",
+      "issue": 12,
+      "name": "orders-repeat-customers",
       "network": false,
       "version": "v1"
     }
