@@ -1,0 +1,9 @@
+﻿Číslo faktury;Odběratel;Datum splatnosti;Částka;Stav;Po splatnosti;Zaplaceno;Chybí / přeplatek;Spárované platby
+FV-2026-101;Alfa Stavby s.r.o.;01.07.2026;10000,00;unpaid;yes;0,00;10000,00;
+FV-2026-102;Alfa Stavby s.r.o.;15.07.2026;8000,00;unpaid;yes;0,00;8000,00;
+FV-2026-103;Alfa Stavby s.r.o.;01.08.2026;6000,00;unpaid;yes;0,00;6000,00;
+FV-2026-104;Beta Dílna s.r.o.;10.07.2026;12000,00;partly_paid;yes;7000,00;5000,00;20.07.2026 7000,00 CZK (variable symbol)
+FV-2026-105;Gama Servis s.r.o.;29.09.2026;5000,00;unpaid;yes;0,00;5000,00;
+FV-2026-106;Delta Obchod s.r.o.;05.07.2026;3000,00;paid;no;3000,00;0,00;06.07.2026 3000,00 CZK (variable symbol)
+FV-2026-107;Epsilon Group s.r.o.;10.07.2026;4000,00;overpaid;no;4500,00;500,00;25.07.2026 4000,00 CZK (variable symbol) | 25.07.2026 500,00 CZK (variable symbol)
+FV-2026-108;Zeta Kavárna s.r.o.;01.07.2026;7000,00;unpaid;yes;0,00;7000,00;

@@ -3,6 +3,11 @@
     {
       "enabled": true,
       "examplesHash": "7dc6f3058a1d5cd1a59514f34b7a5e1f32700dd72b528256f7ca540c36bf7f71",
+      "installedAt": "2026-10-09T04:11:57.735Z",
+      "issue": 15,
+      "name": "invoice-payment-check",
+      "network": false,
+      "version": "v1",
       "history": [
         {
           "action": "install",
@@ -12,10 +17,24 @@
           "issue": 15,
           "version": "v1"
         }
+      ]
+    },
+    {
+      "enabled": true,
+      "examplesHash": "c946f20cb5ba36ccb83a520eca9eafca66afa630c8b67b2795b64c563e642e28",
+      "history": [
+        {
+          "action": "install",
+          "at": "2026-10-09T04:22:36.498Z",
+          "commit": "c72789ca8ac3a7d7a543a0d9401608703a09f6aa",
+          "costUsd": 1.551889,
+          "issue": 16,
+          "version": "v1"
+        }
       ],
-      "installedAt": "2026-10-09T04:11:57.735Z",
-      "issue": 15,
-      "name": "invoice-payment-check",
+      "installedAt": "2026-10-09T04:22:36.498Z",
+      "issue": 16,
+      "name": "payment-reminders",
       "network": false,
       "version": "v1"
     }
