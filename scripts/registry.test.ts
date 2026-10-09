@@ -103,6 +103,7 @@ const deps = (overrides: Partial<RegistryDeps> = {}): RegistryDeps => ({
         : `${COMMIT}\n`
     ),
   now: () => new Date("2026-10-08T12:00:00Z"),
+  remote: true,
   root,
   runExamples: () => Promise.resolve(PASS),
   ...overrides,

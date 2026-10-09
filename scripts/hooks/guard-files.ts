@@ -2,7 +2,7 @@
 // tool writes to locked acceptance examples and their input files
 // (`work/<skill>/fixtures/input/`, both pinned by the lock), review verdicts (written only by
 // `capture-review.ts`), lock files, run state, installed and disabled skills, Claude
-// settings, repo scripts, the registry and skill output in `out/`. The target is matched both as
+// settings, repo scripts, the registry, local build issues (`tracker/`) and skill output in `out/`. The target is matched both as
 // given and with symlinks resolved, so a link (`work/x/self -> .`) cannot
 // redirect a write into a protected path.
 
@@ -51,6 +51,11 @@ const PROTECTED: readonly { entry: string; reason: string }[] = [
   {
     entry: "registry.json",
     reason: "the registry is updated only by `node scripts/registry.ts`",
+  },
+  {
+    entry: "tracker",
+    reason:
+      "build issues are written only by `node scripts/tracker.ts` (open, blocked, done)",
   },
   {
     entry: "out",

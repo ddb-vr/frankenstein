@@ -1,11 +1,31 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { GITHUB_APP_ENV, requireEnvVars } from "./env.ts";
+import { GITHUB_APP_ENV, requireEnvVars, selectTrackerBackend } from "./env.ts";
 
 const ALL_MISSING =
   /Missing required env vars GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY_PATH, GITHUB_APP_INSTALLATION_ID: set them in \.env/;
 const ONE_MISSING =
   /Missing required env var GITHUB_APP_INSTALLATION_ID: set it/;
+
+const APP = {
+  GITHUB_APP_ID: "1",
+  GITHUB_APP_INSTALLATION_ID: "2",
+  GITHUB_APP_PRIVATE_KEY_PATH: "/keys/app.pem",
+};
+const PAT = { GH_TOKEN: "ghp_x", GITHUB_REPO: "acme/frankenstein" };
+
+test("selectTrackerBackend: GitHub App first, then a PAT with a repo, else local", () => {
+  assert.equal(selectTrackerBackend({ ...APP, ...PAT }), "github-app");
+  assert.equal(selectTrackerBackend(APP), "github-app");
+  assert.equal(
+    selectTrackerBackend({ ...APP, GITHUB_APP_INSTALLATION_ID: " ", ...PAT }),
+    "pat"
+  );
+  assert.equal(selectTrackerBackend(PAT), "pat");
+  assert.equal(selectTrackerBackend({ GH_TOKEN: "ghp_x" }), "local");
+  assert.equal(selectTrackerBackend({ ...PAT, GH_TOKEN: "" }), "local");
+  assert.equal(selectTrackerBackend({}), "local");
+});
 
 test("requireEnvVars passes when every variable is set", () => {
   assert.doesNotThrow(() =>

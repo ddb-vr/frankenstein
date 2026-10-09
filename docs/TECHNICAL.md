@@ -2,7 +2,7 @@
 
 A Claude Code agent that detects missing capabilities in a task, builds them as Agent Skills (SKILL.md + Node.js
 scripts + tests), tests them in a Docker sandbox, gets them reviewed and installs them into `.claude/skills/`. All
-GitHub writes go through a GitHub App (bot identity).
+GitHub writes go through a GitHub App (bot identity); without its key the repo runs in a local or PAT tracker mode.
 
 ## Requirements
 
@@ -14,9 +14,12 @@ GitHub writes go through a GitHub App (bot identity).
 
 ```sh
 npm install
-cp .env.example .env   # fill in GitHub App credentials and caps
+cp .env.example .env   # optional: tracker credentials and caps; without .env: local mode, default caps
 npm run sandbox:build
 ```
+
+`BUDGET_USD_PER_RUN` and `MAX_BUILDER_ITERATIONS` default to 5 and 3 when unset; an invalid value makes the budget
+hook deny every tool call.
 
 `FIXTURE_ALLOWED_DOMAINS` in `.env` lists the domains `scripts/record-fixture.ts` may record API responses from
 (comma-separated, subdomains included). The recorder reads it only from `.env`; a value set in the shell is ignored.
@@ -25,6 +28,28 @@ The ARES demo needs `FIXTURE_ALLOWED_DOMAINS=ares.gov.cz` (the `.env.example` de
 `INPUT_ALLOWED_ROOTS` in `.env` lists the directories whose files `scripts/run-skill.ts --mount` may hand to a skill
 (comma-separated, repo-relative or absolute; empty: `demo/data,inputs`). Like the fixture allowlist, it is read only
 from `.env`. `inputs/` and the skills' output directory `out/` are gitignored.
+
+## Tracker backends
+
+`selectTrackerBackend` (`scripts/lib/env.ts`) picks the backend from the environment after loading `.env`;
+`tracker.ts`, `registry.ts install` and the operator commands log it on stderr once per run
+(`tracker backend: <name> (…)`).
+
+| Backend      | When                                                                                 | Issues (`tracker.ts`)                   | Registry commits and tags                                   |
+|--------------|--------------------------------------------------------------------------------------|-----------------------------------------|-------------------------------------------------------------|
+| `github-app` | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH`, `GITHUB_APP_INSTALLATION_ID` all set | `gh` as the App bot on `GITHUB_REPO`    | as the App bot, pushed                                      |
+| `pat`        | else `GH_TOKEN` and `GITHUB_REPO` set                                                | the same `gh` calls as the token's user | local only, `frankenstein-bot <frankenstein-bot@localhost>` |
+| `local`      | otherwise                                                                            | `tracker/issues/<n>.md` (gitignored)    | local only, `frankenstein-bot <frankenstein-bot@localhost>` |
+
+A local issue has the same three states (`open`, `blocked`, `done`), labels (`skill-build`, `blocked`), body and
+comments as a GitHub one: front matter with `title`, `state`, `labels`, `createdAt`, `updatedAt`, `closedAt` (values as
+JSON), then the body and each comment under `**Comment** (<ISO timestamp>)`. `open` prints
+`{ "issue": n, "url": "tracker/issues/<n>.md" }` and writes the same into `work/<skill>/issue.json`; `done` appends the
+same cost table and sandbox audit as on GitHub. `--dry-run` prints the planned file contents (`files`) instead of `gh`
+calls. Only `tracker.ts` writes `tracker/`: `guard-files.ts` and `guard-bash.ts` deny the agent.
+
+Local commits use the same git isolation as the App bot (no inherited `GIT_*`, no global or system config, nothing
+signed) and never push; `remove --delete-tags` and `demo:reset` then delete local tags only.
 
 ## Scripts
 
@@ -98,19 +123,20 @@ only explain them.
 Hooks fail closed: a PreToolUse hook error denies the tool call; a `capture-review.ts` error records no verdict, so
 install keeps refusing. Every hook decision is appended to `logs/hooks.log` (tab-separated: time, hook,
 `allow`/`deny`/`block`, short reason, command or file truncated to 200 chars). `guard-files.ts` also protects
-`scripts/`, `registry.json`, the Claude settings files, `work/.run/`, `work/<skill>/review.json` and `out/`, matching
-the target both as given and with symlinks resolved. `guard-bash.ts` also denies shell access to `.env`/`*.pem` (except
-`.env.example`) and `work/.run/`, and creating symlinks or hard links. Shell entry points that always pass (exactly,
+`scripts/`, `registry.json`, `tracker/` (local issues), the Claude settings files, `work/.run/`,
+`work/<skill>/review.json` and `out/`, matching the target both as given and with symlinks resolved. `guard-bash.ts`
+also denies shell access to `.env`/`*.pem` (except `.env.example`), `tracker/issues` and `work/.run/`, and creating
+symlinks or hard links. Shell entry points that always pass (exactly,
 from the repo root):
 `node scripts/{run-examples,run-skill,registry,lock,tracker,record-fixture,fix-skill,audit-run}.ts …`, `npm test`,
 `npm run check`, `npm run typecheck`, `npm run sandbox:build` (npm ones without extra arguments) and read-only `git`
 (`status`, `log`, `diff`, `show`, …). `.claude/settings.json` pre-approves only that read-only `git` subset and denies
 `gh`, `git commit`/`tag`/`push` and reads of `.env`/`*.pem`: GitHub writes go through `scripts/tracker.ts` and
-`scripts/registry.ts` as the bot. Bot `git` runs never use the operator's git identity, whatever the environment
-(terminal, Claude desktop, IDE): inherited `GIT_*` variables are dropped, global and system git config is not read, and
-command-line config overrides the repo's own: commits and tags are unsigned, the only credential is the bot token (via
-`gh auth git-credential`, no prompts), GitHub SSH remotes are rewritten to HTTPS and any non-HTTPS transport is
-refused.
+`scripts/registry.ts` as the bot. Bot `git` runs (the App bot, or `frankenstein-bot` without the App) never use the
+operator's git identity, whatever the environment (terminal, Claude desktop, IDE): inherited `GIT_*` variables are
+dropped, global and system git config is not read, and command-line config overrides the repo's own: commits and tags
+are unsigned; the App bot's only credential is its token (via `gh auth git-credential`, no prompts), GitHub SSH remotes
+are rewritten to HTTPS and any non-HTTPS transport is refused.
 
 ```sh
 node scripts/lock.ts <skill>                                  # after the user confirms examples.json
@@ -124,11 +150,12 @@ node scripts/run-skill.ts <skill> --input-file <path> [--mount <path>]... [--out
 
 - `install` copies `work/<skill>` (without `progress.md`, `review.json`, `issue.json`) to `.claude/skills/<skill>`,
   bumps the version (`v1`, `v2`, …), updates `registry.json` (appending an `install` history entry with the cost of the
-  current Claude Code session, `null` when unknown) and commits, tags `skill/<skill>@vN` and pushes as the bot.
-  The issue defaults to `work/<skill>/issue.json`, written by `tracker.ts open`. Prints
-  `{ "installed", "version", "commit" }` or `{ "installed": false, "reason" }` (exit 1). The bot credentials
-  (`GITHUB_APP_*` in `.env`) are checked and resolved before anything changes; a failed copy, commit, tag or push
-  restores the previous `.claude/skills/<skill>`, `registry.json`, index, HEAD and tag.
+  current Claude Code session, `null` when unknown) and commits and tags `skill/<skill>@vN`: as the App bot with a
+  push (`github-app` backend), otherwise locally as `frankenstein-bot` without a push (see
+  [Tracker backends](#tracker-backends)). The issue defaults to `work/<skill>/issue.json`, written by
+  `tracker.ts open`. Prints `{ "installed", "version", "commit" }` or `{ "installed": false, "reason" }` (exit 1). With
+  the App, its credentials (`GITHUB_APP_*` in `.env`) are checked and resolved before anything changes; a failed copy,
+  commit, tag or push restores the previous `.claude/skills/<skill>`, `registry.json`, index, HEAD and tag.
 - `run-skill` runs `scripts/main.ts` in the sandbox without `FRANKENSTEIN_MODE=test`, with network per the registry
   entry; prints the skill's JSON output, full stderr in `logs/<name>/run-<timestamp>.log`. The JSON input is the
   argument or the `--input-file` content (exactly one; stdin is not read, and `guard-bash.ts` denies piping into
@@ -200,7 +227,7 @@ npm run skills -- show <name> [--json]            # history + every tag skill/<n
 npm run skills -- disable <name>                  # move to .claude/disabled-skills/, enabled: false
 npm run skills -- enable <name>                   # move back, enabled: true
 npm run skills -- rollback <name> [--to vN]       # restore from tag (default: previous tagged version)
-npm run skills -- remove <name> [--delete-tags]   # delete skill + entry; with tags locally and on origin
+npm run skills -- remove <name> [--delete-tags]   # delete skill + entry; with tags locally and (App only) on origin
 npm run demo:reset [-- --yes]                     # remove --delete-tags for every skill; clear work/ and logs/
 ```
 
@@ -208,17 +235,18 @@ npm run demo:reset [-- --yes]                     # remove --delete-tags for eve
   `disable`, `enable` and `rollback`. `commit` is the HEAD the action was applied to (the action's own commit is its
   child and cannot name itself); entries from before `history` existed are migrated on read (`commit` and `costUsd`
   `null`).
-- The changing commands need the bot credentials, commit as the bot (`chore(registry): <action> <name>`), push, and
-  print one JSON line `{ action, name, ok, commit, version }` or `{ action, name, ok: false, reason }` (exit 1). A
-  failure before the push restores the skill directories, `registry.json`, index and HEAD.
+- The changing commands commit as the bot (`chore(registry): <action> <name>`) and push (with the App; otherwise
+  `frankenstein-bot`, local only), and print one JSON line `{ action, name, ok, commit, version }` or
+  `{ action, name, ok: false, reason }` (exit 1). A failure before the push restores the skill directories,
+  `registry.json`, index and HEAD.
 - `disable` moves the directory because Claude Code discovers skills from `.claude/skills/` by itself; `run-skill.ts`
   also refuses disabled skills, and `install` refuses a disabled skill until it is enabled or removed. A new Claude Code
   session picks up the change.
 - `rollback` needs an enabled skill, restores `.claude/skills/<name>/` from `skill/<name>@vN` and aborts (restoring
   everything) unless `run-examples` passes on it; all tags stay.
-- `demo:reset` asks for confirmation, then also deletes every leftover `skill/<name>@vN` tag (locally and on origin)
-  of skills removed earlier without `--delete-tags`; a failed remove leaves the tags, `work/` and `logs/` untouched.
-  GitHub issues are never touched.
+- `demo:reset` asks for confirmation, then also deletes every leftover `skill/<name>@vN` tag (locally and, with the
+  App, on origin) of skills removed earlier without `--delete-tags`; a failed remove leaves the tags, `work/` and
+  `logs/` untouched. Issues are never touched.
 
 ## Build flow
 

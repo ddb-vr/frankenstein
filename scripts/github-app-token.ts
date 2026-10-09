@@ -1,6 +1,8 @@
 // Exchanges a GitHub App JWT (signed with `node:crypto`, no deps) for an
-// installation access token used for all bot-identity GitHub writes.
-// Library only: nothing here ever prints the token or the private key.
+// installation access token used for all bot-identity GitHub writes. Without
+// the GitHub App, `runAsLocalBot` commits locally as `frankenstein-bot` with
+// the same git isolation. Library only: nothing here ever prints the token or
+// the private key.
 
 import { execFile } from "node:child_process";
 import { createSign } from "node:crypto";
@@ -21,38 +23,49 @@ const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
 const MAX_EXEC_BUFFER_BYTES = 16 * 1024 * 1024;
 const REDACTED = "[REDACTED]";
 
+type GitConfig = readonly (readonly [key: string, value: string])[];
+
 // Git config for bot children at command-line scope (`GIT_CONFIG_COUNT`),
 // which overrides the repo's `.git/config`; the operator's global and system
 // config is not read at all. Nothing is signed (the operator's key would sign
-// bot commits) and the only credential is the bot token (`gh` serves
-// `GH_TOKEN`). An SSH origin would authenticate with the operator's key, so
-// GitHub SSH URLs are rewritten to HTTPS and any other transport is refused.
-const BOT_GIT_CONFIG = [
+// bot commits).
+const UNSIGNED_GIT_CONFIG: GitConfig = [
   ["commit.gpgSign", "false"],
   ["tag.gpgSign", "false"],
   ["tag.forceSignAnnotated", "false"],
   ["push.gpgSign", "false"],
+];
+
+// The GitHub App bot's only credential is its token (`gh` serves `GH_TOKEN`).
+// An SSH origin would authenticate with the operator's key, so GitHub SSH URLs
+// are rewritten to HTTPS and any other transport is refused.
+const BOT_GIT_CONFIG: GitConfig = [
+  ...UNSIGNED_GIT_CONFIG,
   ["credential.helper", ""],
   ["credential.helper", "!gh auth git-credential"],
   ["url.https://github.com/.insteadOf", "git@github.com:"],
   ["url.https://github.com/.insteadOf", "ssh://git@github.com/"],
-] as const;
+];
 
-const BOT_GIT_ENV: Readonly<Record<string, string>> = {
-  GIT_ALLOW_PROTOCOL: "https",
+const isolatedGitEnv = (config: GitConfig): Record<string, string> => ({
   // No prompt or askpass helper: missing bot credentials fail, never fall
   // back to the operator's.
   GIT_ASKPASS: "",
-  GIT_CONFIG_COUNT: String(BOT_GIT_CONFIG.length),
+  GIT_CONFIG_COUNT: String(config.length),
   GIT_CONFIG_GLOBAL: devNull,
   GIT_CONFIG_NOSYSTEM: "1",
   GIT_TERMINAL_PROMPT: "0",
   ...Object.fromEntries(
-    BOT_GIT_CONFIG.flatMap(([key, value], index) => [
+    config.flatMap(([key, value], index) => [
       [`GIT_CONFIG_KEY_${index}`, key],
       [`GIT_CONFIG_VALUE_${index}`, value],
     ])
   ),
+});
+
+const BOT_GIT_ENV: Readonly<Record<string, string>> = {
+  GIT_ALLOW_PROTOCOL: "https",
+  ...isolatedGitEnv(BOT_GIT_CONFIG),
 };
 
 // Every secret this process has seen; scrubbed from any error text.
@@ -220,34 +233,78 @@ export const botEnv = async (): Promise<Record<string, string>> => {
   };
 };
 
+/** Runs `cmd` with `env`; resolves to stdout, rejects with the redacted stderr. */
+export const runCommand = (
+  cmd: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv,
+  stdin?: string
+): Promise<string> => {
+  const { promise, resolve, reject } = Promise.withResolvers<string>();
+  const child = execFile(
+    cmd,
+    args,
+    { env, maxBuffer: MAX_EXEC_BUFFER_BYTES, windowsHide: true },
+    (error, stdout, stderr) => {
+      if (error) {
+        const detail = redact(String(stderr).trim() || error.message);
+        reject(new Error(`${cmd} ${args[0] ?? ""} failed: ${detail}`));
+        return;
+      }
+      resolve(String(stdout));
+    }
+  );
+  child.stdin?.end(stdin ?? "");
+  return promise;
+};
+
+/**
+ * `identityEnv` on top of the host env without inherited `GIT_*` variables
+ * (`GIT_CONFIG_PARAMETERS`, `GIT_SSH_COMMAND`, `GIT_ASKPASS`, …), which could
+ * bring the operator's setup back.
+ */
+const runIsolated = (
+  cmd: string,
+  args: readonly string[],
+  identityEnv: Record<string, string>,
+  stdin?: string
+): Promise<string> =>
+  runCommand(
+    cmd,
+    args,
+    {
+      ...Object.fromEntries(
+        Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_"))
+      ),
+      ...identityEnv,
+    },
+    stdin
+  );
+
 export const runAsBot = async (
   cmd: string,
   args: readonly string[],
   { stdin }: { stdin?: string } = {}
-): Promise<string> => {
-  // Inherited `GIT_*` variables (`GIT_CONFIG_PARAMETERS`, `GIT_SSH_COMMAND`,
-  // `GIT_ASKPASS`, …) could bring the operator's setup back.
-  const hostEnv = Object.fromEntries(
-    Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_"))
-  );
-  const env = {
-    ...hostEnv,
-    ...(await botEnv()),
-  };
-  return await new Promise((resolve, reject) => {
-    const child = execFile(
-      cmd,
-      args,
-      { env, maxBuffer: MAX_EXEC_BUFFER_BYTES, windowsHide: true },
-      (error, stdout, stderr) => {
-        if (error) {
-          const detail = redact(String(stderr).trim() || error.message);
-          reject(new Error(`${cmd} ${args[0] ?? ""} failed: ${detail}`));
-          return;
-        }
-        resolve(String(stdout));
-      }
-    );
-    child.stdin?.end(stdin ?? "");
-  });
+): Promise<string> => runIsolated(cmd, args, await botEnv(), stdin);
+
+/** Author and committer of registry commits when the GitHub App is not configured. */
+export const LOCAL_BOT: BotIdentity = {
+  email: "frankenstein-bot@localhost",
+  name: "frankenstein-bot",
 };
+
+/**
+ * Runs `cmd` (git) as `LOCAL_BOT` with the bot's isolation from the operator's
+ * git setup. It has no credentials: callers never push with it.
+ */
+export const runAsLocalBot = (
+  cmd: string,
+  args: readonly string[]
+): Promise<string> =>
+  runIsolated(cmd, args, {
+    ...isolatedGitEnv(UNSIGNED_GIT_CONFIG),
+    GIT_AUTHOR_EMAIL: LOCAL_BOT.email,
+    GIT_AUTHOR_NAME: LOCAL_BOT.name,
+    GIT_COMMITTER_EMAIL: LOCAL_BOT.email,
+    GIT_COMMITTER_NAME: LOCAL_BOT.name,
+  });

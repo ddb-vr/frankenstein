@@ -18,11 +18,13 @@
 // examples (unchanged), an `approve` verdict in `work/<skill>/review.json`
 // captured for those locked examples (its `examplesHash` equals the lock), and
 // a fresh passing `run-examples`, then copies the skill, updates the registry
-// (appending an `install` history entry with the run's cost), commits, tags
-// and pushes as the GitHub App bot. The issue defaults to
-// `work/<skill>/issue.json` (written by `tracker.ts open`). Output is one JSON
-// line: `{ installed, version, commit }`, or `{ installed: false, reason }`
-// (exit 1).
+// (appending an `install` history entry with the run's cost), commits and
+// tags. With the `github-app` tracker backend it commits as the GitHub App bot
+// and pushes; otherwise it commits as `frankenstein-bot
+// <frankenstein-bot@localhost>` and skips the push (same for the operator
+// commands). The issue defaults to `work/<skill>/issue.json` (written by
+// `tracker.ts open`). Output is one JSON line: `{ installed, version, commit }`,
+// or `{ installed: false, reason }` (exit 1).
 //
 // The bot credentials are resolved before anything changes. If the copy,
 // commit, tag or push fails, install restores `.claude/skills/<skill>`,
@@ -31,7 +33,11 @@
 import { cpSync, existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { loadDotEnv } from "./lib/env.ts";
+import {
+  describeTrackerBackend,
+  loadDotEnv,
+  selectTrackerBackend,
+} from "./lib/env.ts";
 import { isPlainObject, SKILL_NAME } from "./lib/examples.ts";
 import { readIssueRecord } from "./lib/issue.ts";
 import {
@@ -52,10 +58,12 @@ import {
   localVersionTags,
   message,
   pushChange,
+  REPO_ROOT,
   type RegistryDeps,
   type RegistryEntry,
   readRegistry,
   realDeps,
+  realGit,
   saveEntry,
   skillPath,
   skillTag,
@@ -275,17 +283,24 @@ interface CliValues {
   to?: string;
 }
 
+/** Loads `.env`, logs the selected backend and returns its dependencies. */
+const cliDeps = (): RegistryDeps => {
+  loadDotEnv();
+  const backend = selectTrackerBackend();
+  process.stderr.write(describeTrackerBackend(backend));
+  return realDeps(backend);
+};
+
 const runInstall = async (skill: string, values: CliValues): Promise<void> => {
   let result: InstallResult;
   if (values.issue === undefined || POSITIVE_INTEGER.test(values.issue)) {
-    loadDotEnv();
     result = await install(
       skill,
       {
         network: values.network,
         ...(values.issue === undefined ? {} : { issue: Number(values.issue) }),
       },
-      realDeps
+      cliDeps()
     );
   } else {
     result = { installed: false, reason: "--issue must be a positive integer" };
@@ -299,23 +314,23 @@ const runOperator = async (
   name: string,
   values: CliValues
 ): Promise<OperatorResult> => {
-  loadDotEnv();
+  const deps = cliDeps();
   switch (command) {
     case "disable":
-      return await disableSkill(name, realDeps);
+      return await disableSkill(name, deps);
     case "enable":
-      return await enableSkill(name, realDeps);
+      return await enableSkill(name, deps);
     case "rollback":
       return await rollbackSkill(
         name,
         values.to === undefined ? {} : { to: values.to },
-        realDeps
+        deps
       );
     default:
       return await removeSkill(
         name,
         { deleteTags: values["delete-tags"] },
-        realDeps
+        deps
       );
   }
 };
@@ -341,7 +356,7 @@ const main = async (): Promise<void> => {
   });
   const [command = "", name] = positionals;
   if (command === "list" && name === undefined) {
-    const skills = listSkills(realDeps.root);
+    const skills = listSkills(REPO_ROOT);
     process.stdout.write(
       values.json
         ? `${JSON.stringify({ skills })}\n`
@@ -356,7 +371,7 @@ const main = async (): Promise<void> => {
   }
   if (command === "show") {
     try {
-      const details = await showSkill(realDeps, name);
+      const details = await showSkill({ git: realGit, root: REPO_ROOT }, name);
       process.stdout.write(
         values.json
           ? `${JSON.stringify(details)}\n`

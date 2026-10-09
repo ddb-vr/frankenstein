@@ -18,10 +18,10 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { botEnv, runAsBot } from "../github-app-token.ts";
+import { botEnv, runAsBot, runAsLocalBot } from "../github-app-token.ts";
 import { currentSessionId, peekRunUsage } from "../hooks/budget.ts";
 import type { Summary } from "../run-examples.ts";
-import { GITHUB_APP_ENV, requireEnvVars } from "./env.ts";
+import { GITHUB_APP_ENV, requireEnvVars, type TrackerBackend } from "./env.ts";
 import { isPlainObject } from "./examples.ts";
 import { computeCost } from "./pricing.ts";
 
@@ -172,7 +172,10 @@ export const message = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 export interface RegistryDeps {
-  /** Runs a command with the GitHub App bot identity; resolves to stdout. */
+  /**
+   * Runs a command as the bot (the GitHub App, or `frankenstein-bot` when
+   * `remote` is false); resolves to stdout.
+   */
   bot: (cmd: string, args: readonly string[]) => Promise<string>;
   /** Build cost (USD) of the current Claude Code run, `null` when unknown. */
   costUsd: () => number | null;
@@ -181,6 +184,11 @@ export interface RegistryDeps {
   /** Git as the local user, never committing; resolves to stdout. */
   git: (args: readonly string[]) => Promise<string>;
   now: () => Date;
+  /**
+   * Whether commits, tags and tag deletions are pushed to origin (GitHub App
+   * backend only). False: everything stays local and origin is never read.
+   */
+  remote: boolean;
   root: string;
   /** Fresh `run-examples` summary for a skill directory. */
   runExamples: (skillDir: string) => Promise<Summary>;
@@ -337,11 +345,14 @@ export const commitChange = async (
   return (await deps.git([...repo, "rev-parse", "HEAD"])).trim();
 };
 
-/** Pushes HEAD and `refspecs` in one atomic push as the bot. */
+/** Pushes HEAD and `refspecs` in one atomic push as the bot; no-op without `remote`. */
 export const pushChange = async (
   deps: RegistryDeps,
   refspecs: readonly string[] = []
 ): Promise<void> => {
+  if (!deps.remote) {
+    return;
+  }
   await deps.bot("git", [
     "-C",
     deps.root,
@@ -388,17 +399,30 @@ const currentRunCost = (): number | null => {
   }
 };
 
-export const realDeps: RegistryDeps = {
-  bot: (cmd, args) => runAsBot(cmd, args),
-  costUsd: currentRunCost,
-  credentials: async () => {
-    requireEnvVars(GITHUB_APP_ENV);
-    await botEnv();
-  },
-  git: async (args) =>
-    (await execFileAsync("git", args, { encoding: "utf8", windowsHide: true }))
-      .stdout,
-  now: () => new Date(),
-  root: REPO_ROOT,
-  runExamples: runExamplesScript,
+export const realGit = async (args: readonly string[]): Promise<string> =>
+  (await execFileAsync("git", args, { encoding: "utf8", windowsHide: true }))
+    .stdout;
+
+/**
+ * The CLI's dependencies. Only the `github-app` backend commits as the GitHub
+ * App bot and pushes; otherwise commits and tags stay local, authored by
+ * `frankenstein-bot`, and no credentials are needed.
+ */
+export const realDeps = (backend: TrackerBackend): RegistryDeps => {
+  const app = backend === "github-app";
+  return {
+    bot: app ? (cmd, args) => runAsBot(cmd, args) : runAsLocalBot,
+    costUsd: currentRunCost,
+    credentials: app
+      ? async () => {
+          requireEnvVars(GITHUB_APP_ENV);
+          await botEnv();
+        }
+      : () => Promise.resolve(),
+    git: realGit,
+    now: () => new Date(),
+    remote: app,
+    root: REPO_ROOT,
+    runExamples: runExamplesScript,
+  };
 };

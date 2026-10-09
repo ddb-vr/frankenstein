@@ -88,7 +88,7 @@ test("disabled skills are the operator's: agent writes are denied", () => {
   }
 });
 
-test("lock files, installed skills, settings, scripts and registry are protected", () => {
+test("lock files, installed skills, settings, scripts, registry and local issues are protected", () => {
   for (const file of [
     "/repo/work/.locks/csv-sum.json",
     "/repo/.claude/skills/csv-sum/SKILL.md",
@@ -97,6 +97,7 @@ test("lock files, installed skills, settings, scripts and registry are protected
     "/repo/.claude/settings.local.json",
     "/repo/scripts/hooks/budget.ts",
     "/repo/registry.json",
+    "/repo/tracker/issues/3.md",
     "/repo/work/.run/6f1c2a7e-0b8d-4d6b-9a51-2f4e8c1d3b90.json",
     "/repo/work/.run/current.json",
     // Relative traversal and case variants resolve to the same files.

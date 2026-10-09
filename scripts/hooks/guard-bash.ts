@@ -79,6 +79,7 @@ const PROTECTED = [
   "examples.json",
   "review.json",
   "registry.json",
+  "tracker/issues",
   ".locks",
   ".claude",
 ];
@@ -219,7 +220,7 @@ const FIND_EXEC: Record<string, true> = {
 const OPERATOR_REASON =
   "Blocked: operator command – ask the user to run it in a terminal (`npm run skills -- disable|enable|rollback|remove <name>`, `npm run demo:reset`). You may run `node scripts/registry.ts list|show|install`.";
 const PROTECTED_REASON =
-  "Blocked: shell access to protected files (examples.json, review.json, registry.json, work/.locks, work/.run, .claude). Use the Read tool to inspect them; lock with `node scripts/lock.ts <skill>`, install with `node scripts/registry.ts install <skill>`; run state is written only by the hooks.";
+  "Blocked: shell access to protected files (examples.json, review.json, registry.json, tracker/issues, work/.locks, work/.run, .claude). Use the Read tool to inspect them; lock with `node scripts/lock.ts <skill>`, install with `node scripts/registry.ts install <skill>`, update issues with `node scripts/tracker.ts`; run state is written only by the hooks.";
 const SECRET_REASON =
   "Blocked: shell access to secrets (.env, *.pem). Scripts load .env themselves; never read, copy or print it (`.env.example` lists the variables).";
 const SYMLINK_REASON =

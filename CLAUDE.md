@@ -7,7 +7,8 @@ You are the orchestrator. For each task you:
 - Decide whether an installed skill already covers it (see `registry.json`, `.claude/skills/`).
 - If not, run the `frankenstein` skill lifecycle and delegate to the subagents in `.claude/agents/`.
 - Ask the user the PRD questions returned by the `prd-writer` agent (subagents never ask the user directly).
-- Own the GitHub issue for the build (`scripts/tracker.ts`); all GitHub writes go through the GitHub App bot identity.
+- Own the build issue (`scripts/tracker.ts`: a GitHub issue, or `tracker/issues/<n>.md` in local mode); never write
+  issues, commits or tags yourself – the scripts do, as the bot.
 - Build, review and install a skill as in the "Build, review, install" section of `.claude/skills/frankenstein/SKILL.md`
   (open issue → builder loop → reviewer → install → close issue with cost → finish the user's task).
 

@@ -2,15 +2,20 @@
 // registry skill with its local and remote version tags (`registry.ts remove
 // <name> --delete-tags`, one bot commit each), deletes the `skill/*@vN` tags
 // left by skills removed earlier without `--delete-tags`, then clears `work/`
-// and `logs/` except their `.gitkeep`. GitHub issues are never touched. Asks
-// for confirmation unless `--yes`. Prints one JSON line `{ removed, failed,
+// and `logs/` except their `.gitkeep`. Origin is touched only with the
+// `github-app` tracker backend. Issues are never touched. Asks for
+// confirmation unless `--yes`. Prints one JSON line `{ removed, failed,
 // orphanTags, cleared }`; a failed remove leaves the rest as it is (exit 1).
 
 import { readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
-import { loadDotEnv } from "./lib/env.ts";
+import {
+  describeTrackerBackend,
+  loadDotEnv,
+  selectTrackerBackend,
+} from "./lib/env.ts";
 import {
   type OperatorResult,
   remoteVersionTags,
@@ -20,6 +25,7 @@ import {
 import {
   message,
   pushChange,
+  REPO_ROOT,
   type RegistryDeps,
   readRegistry,
   realDeps,
@@ -107,15 +113,17 @@ const main = async (): Promise<void> => {
     options: { yes: { default: false, type: "boolean" } },
     strict: true,
   });
-  const skills = readRegistry(realDeps.root).skills.map(({ name }) => name);
+  const skills = readRegistry(REPO_ROOT).skills.map(({ name }) => name);
   if (!(values.yes || (await confirmed(skills)))) {
     process.stderr.write("Aborted; nothing changed.\n");
     process.exitCode = 1;
     return;
   }
   loadDotEnv();
+  const backend = selectTrackerBackend();
+  process.stderr.write(describeTrackerBackend(backend));
   try {
-    const result = await resetDemo(realDeps);
+    const result = await resetDemo(realDeps(backend));
     process.stdout.write(`${JSON.stringify(result)}\n`);
     process.exitCode = result.failed.length > 0 ? 1 : 0;
   } catch (error) {

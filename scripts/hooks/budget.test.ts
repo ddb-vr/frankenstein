@@ -205,11 +205,11 @@ test("usage from an unpriced model fails closed", () => {
   assert.throws(() => call("Read", {}), NO_PRICE);
 });
 
-test("hook process denies when the caps are not configured", async () => {
+test("hook process denies when a cap is invalid", async () => {
   const run = await runHookProcess(
     "budget.ts",
     JSON.stringify(recordedInput("Read", { file_path: "/x" })),
-    { BUDGET_USD_PER_RUN: "", MAX_BUILDER_ITERATIONS: "3" }
+    { BUDGET_USD_PER_RUN: "0", MAX_BUILDER_ITERATIONS: "3" }
   );
   assert.equal(run.exitCode, 2);
   assert.match(run.reason ?? "", MUST_BE_POSITIVE);

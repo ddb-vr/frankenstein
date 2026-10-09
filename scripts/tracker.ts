@@ -1,30 +1,50 @@
-// GitHub issue lifecycle for skill builds via `gh`: open / blocked / done
-// (close with cost summary and sandbox audit). All writes run as the GitHub
-// App bot.
+// Build issue lifecycle: open / blocked / done (close with cost summary and
+// sandbox audit). The backend is picked from the environment
+// (`selectTrackerBackend`, logged once per run on stderr):
+// - `github-app`: GitHub issues via `gh` as the GitHub App bot.
+// - `pat`: the same `gh` calls as the user of `GH_TOKEN` on `GITHUB_REPO`.
+// - `local`: `tracker/issues/<n>.md` (see `lib/local-issues.ts`) with the
+//   same states, labels, bodies and comments.
 //
 //   node scripts/tracker.ts open    --skill <name> --summary <text>
 //   node scripts/tracker.ts blocked --issue <n> --reason <text>
 //   node scripts/tracker.ts done    --issue <n> --summary <text> [--usage <file>] [--version <vN>]
 //
-// `open` also writes `work/<skill>/issue.json` (`{ issue, url }`). `done`
-// without `--usage` reports the usage of the Claude Code session in
-// `work/.run/current.json`, as tracked by `scripts/hooks/budget.ts`, and
-// always appends the `scripts/audit-run.ts` result for that session.
+// `open` also writes `work/<skill>/issue.json` (`{ issue, url }`; locally the
+// URL is `tracker/issues/<n>.md`). `done` without `--usage` reports the usage
+// of the Claude Code session in `work/.run/current.json`, as tracked by
+// `scripts/hooks/budget.ts`, and always appends the `scripts/audit-run.ts`
+// result for that session.
 //
-// Every command accepts `--dry-run` (prints the planned `gh` calls instead of
-// running them and writes no files; needs no network). Dry-run still reads
-// `.env` when present, so it shows the real `GITHUB_REPO`, else a placeholder.
-// Output is one JSON line.
+// Every command accepts `--dry-run`: it prints the planned `gh` calls (or the
+// local issue file contents) instead of running them and writes no files;
+// needs no network. Dry-run still reads `.env` when present, so it shows the
+// real backend and `GITHUB_REPO`, else a placeholder. Output is one JSON line.
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { type AuditReport, auditRun } from "./audit-run.ts";
-import { runAsBot } from "./github-app-token.ts";
+import { runAsBot, runCommand } from "./github-app-token.ts";
 import { currentSessionId, getRunUsage, peekRunUsage } from "./hooks/budget.ts";
-import { loadDotEnv } from "./lib/env.ts";
+import {
+  describeTrackerBackend,
+  loadDotEnv,
+  selectTrackerBackend,
+  type TrackerBackend,
+} from "./lib/env.ts";
 import { SKILL_NAME } from "./lib/examples.ts";
-import { writeIssueRecord } from "./lib/issue.ts";
+import { type IssueRecord, writeIssueRecord } from "./lib/issue.ts";
+import {
+  formatLocalIssue,
+  type LocalIssue,
+  type LocalIssueFile,
+  localIssuePath,
+  nextLocalIssueNumber,
+  readLocalIssue,
+  withComment,
+  writeLocalIssue,
+} from "./lib/local-issues.ts";
 import {
   type CostReport,
   computeCost,
@@ -118,7 +138,11 @@ export interface GhCall {
 
 export type Gh = (args: string[], stdin?: string) => Promise<string>;
 
-const realGh: Gh = (args, stdin) => runAsBot("gh", args, { stdin });
+const ghRunners: Record<Exclude<TrackerBackend, "local">, Gh> = {
+  "github-app": (args, stdin) => runAsBot("gh", args, { stdin }),
+  // `gh` authenticates with `GH_TOKEN` from the environment (or `.env`).
+  pat: (args, stdin) => runCommand("gh", args, process.env, stdin),
+};
 
 // Canned `gh` output so dry-run walks every step of each command.
 const dryRunOutput = (args: readonly string[], repo: string): string => {
@@ -140,7 +164,15 @@ const recordingGh =
   };
 
 // ---------------------------------------------------------------------------
-// Commands
+// Backends
+
+/** Issue operations of one backend; titles, bodies and comments are formatted. */
+interface Tracker {
+  block: (issue: number, comment: string) => Promise<void>;
+  /** Removes the `blocked` label, comments and closes. */
+  complete: (issue: number, comment: string) => Promise<void>;
+  open: (title: string, body: string) => Promise<IssueRecord>;
+}
 
 interface Context {
   gh: Gh;
@@ -173,104 +205,155 @@ const hasLabel = (viewJson: string, label: string): boolean => {
   );
 };
 
-const openIssue = async (
-  { gh, repo }: Context,
-  skill: string,
-  summary: string
-): Promise<{ issue: number; url: string }> => {
-  await Promise.all(
-    LABELS.map(({ name, color, description }) =>
-      gh([
-        "label",
-        "create",
-        name,
-        "--repo",
-        repo,
-        "--color",
-        color,
-        "--description",
-        description,
-        "--force",
-      ])
-    )
-  );
-  const url = (
-    await gh(
-      [
-        "issue",
-        "create",
-        "--repo",
-        repo,
-        "--title",
-        issueTitle(skill),
-        "--label",
-        BUILD_LABEL,
-        "--body-file",
-        "-",
-      ],
-      formatOpenBody(skill, summary)
-    )
-  ).trim();
-  return { issue: issueNumberFromUrl(url), url };
-};
-
-const blockIssue = async (
-  { gh, repo }: Context,
-  issue: number,
-  reason: string
-): Promise<{ issue: number; state: "blocked" }> => {
-  const ref = String(issue);
-  await gh([
-    "issue",
-    "edit",
-    ref,
-    "--repo",
-    repo,
-    "--add-label",
-    BLOCKED_LABEL,
-  ]);
-  await gh(
-    ["issue", "comment", ref, "--repo", repo, "--body-file", "-"],
-    formatBlockedComment(reason)
-  );
-  return { issue, state: "blocked" };
-};
-
-const completeIssue = async (
-  { gh, repo }: Context,
-  issue: number,
-  summary: string,
-  cost: CostReport,
-  audit: AuditOutcome,
-  version?: string
-): Promise<{ issue: number; state: "done"; totalUsd: number }> => {
-  const ref = String(issue);
-  const view = await gh([
-    "issue",
-    "view",
-    ref,
-    "--repo",
-    repo,
-    "--json",
-    "labels",
-  ]);
-  if (hasLabel(view, BLOCKED_LABEL)) {
+const githubTracker = ({ gh, repo }: Context): Tracker => ({
+  block: async (issue, comment) => {
+    const ref = String(issue);
     await gh([
       "issue",
       "edit",
       ref,
       "--repo",
       repo,
-      "--remove-label",
+      "--add-label",
       BLOCKED_LABEL,
     ]);
-  }
-  await gh(
-    ["issue", "comment", ref, "--repo", repo, "--body-file", "-"],
-    formatDoneComment(summary, cost, audit, version)
-  );
-  await gh(["issue", "close", ref, "--repo", repo]);
-  return { issue, state: "done", totalUsd: cost.totalUsd };
+    await gh(
+      ["issue", "comment", ref, "--repo", repo, "--body-file", "-"],
+      comment
+    );
+  },
+  complete: async (issue, comment) => {
+    const ref = String(issue);
+    const view = await gh([
+      "issue",
+      "view",
+      ref,
+      "--repo",
+      repo,
+      "--json",
+      "labels",
+    ]);
+    if (hasLabel(view, BLOCKED_LABEL)) {
+      await gh([
+        "issue",
+        "edit",
+        ref,
+        "--repo",
+        repo,
+        "--remove-label",
+        BLOCKED_LABEL,
+      ]);
+    }
+    await gh(
+      ["issue", "comment", ref, "--repo", repo, "--body-file", "-"],
+      comment
+    );
+    await gh(["issue", "close", ref, "--repo", repo]);
+  },
+  open: async (title, body) => {
+    await Promise.all(
+      LABELS.map(({ name, color, description }) =>
+        gh([
+          "label",
+          "create",
+          name,
+          "--repo",
+          repo,
+          "--color",
+          color,
+          "--description",
+          description,
+          "--force",
+        ])
+      )
+    );
+    const url = (
+      await gh(
+        [
+          "issue",
+          "create",
+          "--repo",
+          repo,
+          "--title",
+          title,
+          "--label",
+          BUILD_LABEL,
+          "--body-file",
+          "-",
+        ],
+        body
+      )
+    ).trim();
+    return { issue: issueNumberFromUrl(url), url };
+  },
+});
+
+/** `save` writes (or, in dry-run, records) a file; `create` never replaces one. */
+type SaveLocalIssue = (file: LocalIssueFile, create: boolean) => void;
+
+const localTracker = (
+  root: string,
+  now: () => Date,
+  save: SaveLocalIssue
+): Tracker => {
+  const update = (
+    issue: number,
+    comment: string,
+    change: (
+      current: LocalIssue,
+      at: string
+    ) => Pick<LocalIssue, "closedAt" | "labels" | "state">
+  ): Promise<void> => {
+    const current = readLocalIssue(root, issue);
+    const at = now().toISOString();
+    const next = withComment(
+      { ...current, ...change(current, at) },
+      at,
+      comment
+    );
+    save(
+      { content: formatLocalIssue(next), path: localIssuePath(issue) },
+      false
+    );
+    return Promise.resolve();
+  };
+  return {
+    block: (issue, comment) =>
+      update(issue, comment, ({ closedAt, labels }) => ({
+        closedAt,
+        labels: labels.includes(BLOCKED_LABEL)
+          ? labels
+          : [...labels, BLOCKED_LABEL],
+        state: "blocked",
+      })),
+    complete: (issue, comment) =>
+      update(issue, comment, ({ labels }, at) => ({
+        closedAt: at,
+        labels: labels.filter((label) => label !== BLOCKED_LABEL),
+        state: "done",
+      })),
+    open: (title, body) => {
+      const issue = nextLocalIssueNumber(root);
+      const at = now().toISOString();
+      const file = localIssuePath(issue);
+      save(
+        {
+          content: formatLocalIssue({
+            body,
+            closedAt: null,
+            createdAt: at,
+            labels: [BUILD_LABEL],
+            state: "open",
+            title,
+            updatedAt: at,
+          }),
+          path: file,
+        },
+        true
+      );
+      return Promise.resolve({ issue, url: file });
+    },
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -354,15 +437,24 @@ const CLI_OPTIONS = {
 } as const;
 
 export interface RunOptions {
-  /** Replaces the bot `gh` outside dry-run (tests). */
+  /** Replaces the GitHub backends' `gh` outside dry-run (tests). */
   gh?: Gh;
-  /** Repo whose `.env` is loaded and whose `work/` holds issue records and run state. */
+  /** Receives the backend log line; default stderr. */
+  log?: (line: string) => void;
+  /** Clock for local issue timestamps. */
+  now?: () => Date;
+  /** Repo whose `.env` is loaded and whose `work/` and `tracker/` hold issue records and run state. */
   root?: string;
 }
 
 export const run = async (
   argv: string[],
-  { gh, root = REPO_ROOT }: RunOptions = {}
+  {
+    gh,
+    log = (line) => process.stderr.write(line),
+    now = () => new Date(),
+    root = REPO_ROOT,
+  }: RunOptions = {}
 ): Promise<unknown> => {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
@@ -373,12 +465,27 @@ export const run = async (
   const [command] = positionals;
   const dryRun = values["dry-run"];
   loadDotEnv(root);
-  const repo = resolveRepo(dryRun);
+  const backend = selectTrackerBackend();
+  log(describeTrackerBackend(backend));
   const calls: GhCall[] = [];
-  const ctx: Context = {
-    gh: dryRun ? recordingGh(calls, repo) : (gh ?? realGh),
-    repo,
-  };
+  const files: LocalIssueFile[] = [];
+  let repo = "";
+  let tracker: Tracker;
+  if (backend === "local") {
+    tracker = localTracker(
+      root,
+      now,
+      dryRun
+        ? (file) => files.push(file)
+        : (file, create) => writeLocalIssue(root, file, create)
+    );
+  } else {
+    repo = resolveRepo(dryRun);
+    tracker = githubTracker({
+      gh: dryRun ? recordingGh(calls, repo) : (gh ?? ghRunners[backend]),
+      repo,
+    });
+  }
 
   let result: unknown;
   switch (command) {
@@ -387,10 +494,9 @@ export const run = async (
       if (!SKILL_NAME.test(skill)) {
         throw new Error(`invalid skill name "${skill}"`);
       }
-      const opened = await openIssue(
-        ctx,
-        skill,
-        requireText(values.summary, "summary")
+      const opened = await tracker.open(
+        issueTitle(skill),
+        formatOpenBody(skill, requireText(values.summary, "summary"))
       );
       if (!dryRun) {
         writeIssueRecord(root, skill, opened);
@@ -398,13 +504,15 @@ export const run = async (
       result = opened;
       break;
     }
-    case "blocked":
-      result = await blockIssue(
-        ctx,
-        requireIssue(values.issue),
-        requireText(values.reason, "reason")
+    case "blocked": {
+      const issue = requireIssue(values.issue);
+      await tracker.block(
+        issue,
+        formatBlockedComment(requireText(values.reason, "reason"))
       );
+      result = { issue, state: "blocked" };
       break;
+    }
     case "done": {
       const issue = requireIssue(values.issue);
       const summary = requireText(values.summary, "summary");
@@ -413,14 +521,11 @@ export const run = async (
         ? parseUsage(await readFile(values.usage, "utf8"))
         : sessionUsage(currentSessionId(root), root);
       const cost = computeCost(usage);
-      result = await completeIssue(
-        ctx,
+      await tracker.complete(
         issue,
-        summary,
-        cost,
-        auditCurrentRun(root),
-        values.version
+        formatDoneComment(summary, cost, auditCurrentRun(root), values.version)
       );
+      result = { issue, state: "done", totalUsd: cost.totalUsd };
       break;
     }
     default:
@@ -429,7 +534,12 @@ export const run = async (
       );
   }
 
-  return dryRun ? { calls, dryRun: true, repo, result } : result;
+  if (!dryRun) {
+    return result;
+  }
+  return backend === "local"
+    ? { backend, dryRun, files, result }
+    : { backend, calls, dryRun, repo, result };
 };
 
 const main = async (): Promise<void> => {

@@ -94,7 +94,8 @@ Starts once the intake hands over a locked, PRD-reviewed `work/<skill>/`. A hook
 action, follow its reason.
 
 1. **Open issue** – `node scripts/tracker.ts open --skill <skill> --summary "<goal + why>"`. It writes
-   `work/<skill>/issue.json` (`{ "issue", "url" }`); take `<n>` from there in later steps.
+   `work/<skill>/issue.json` (`{ "issue", "url" }`; the URL is a GitHub issue, or `tracker/issues/<n>.md` in local
+   mode); take `<n>` from there in later steps.
 2. **Build loop** – invoke the `skill-builder` agent with only `<skill>` as the prompt. It returns one line
    `{ "status": "pass" | "fail" | "impossible", "summary" }`. On `fail`, invoke it again: each call has a fresh context,
    state lives in `work/<skill>/progress.md`. The budget hook caps iterations and spend. `pass` means
@@ -107,7 +108,7 @@ action, follow its reason.
    `review.json`. If that builder call returns `fail` or `impossible` → blocked (do not loop back to step 2). A second
    reject → blocked.
 5. **Install** – `node scripts/registry.ts install <skill>`, plus `--network` when the PRD's Network section says
-   network is needed. Bot commit + tag `skill/<skill>@vN`.
+   network is needed. Bot commit + tag `skill/<skill>@vN` (pushed only with the GitHub App).
 6. **Done** – `node scripts/tracker.ts done --issue <n> --summary "<what was built>" --version <vN>`. Usage and cost
    come from the current run automatically.
 7. **Finish the user's task** – use the new skill via `node scripts/run-skill.ts <skill> '<json>'` (or

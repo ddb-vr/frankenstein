@@ -386,6 +386,7 @@ test("protected files are off limits in shell commands", () => {
       "cp -r work/csv-sum .claude/skills/csv-sum",
       'echo \'{"verdict":"approve"}\' > work/csv-sum/review.json',
       "jq . registry.json",
+      "echo '**Done.**' >> tracker/issues/3.md",
       "cat .claude/settings.json",
       // Allowed entry points cannot redirect into protected files.
       "node scripts/lock.ts csv-sum > work/.locks/other.json",

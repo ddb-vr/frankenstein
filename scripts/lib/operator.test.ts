@@ -16,6 +16,7 @@ import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { promisify } from "node:util";
 import { resetDemo } from "../demo-reset.ts";
+import { LOCAL_BOT, runAsLocalBot } from "../github-app-token.ts";
 import { lockSkill, readLock } from "../lock.ts";
 import { install } from "../registry.ts";
 import type { Summary } from "../run-examples.ts";
@@ -97,6 +98,7 @@ const deps: RegistryDeps = {
   credentials: () => Promise.resolve(),
   git: (args) => git(args),
   now: () => new Date("2026-10-09T12:00:00Z"),
+  remote: true,
   get root() {
     return root;
   },
@@ -387,6 +389,52 @@ test("demo reset removes every skill with its tags, orphan tags too, and clears 
   assert.deepEqual(readdirSync(path.join(root, "logs")), [".gitkeep"]);
   assert.deepEqual(await remoteTags(), []);
   assert.equal((await git(["tag", "--list"])).trim(), "unrelated");
+});
+
+test("without the GitHub App, install, rollback and remove commit and tag as frankenstein-bot and never push", async () => {
+  // The operator's repo config demands signing; the local bot never signs.
+  await git(["config", "commit.gpgsign", "true"]);
+  await git(["config", "tag.gpgsign", "true"]);
+  const originHead = (await git(["rev-parse", "HEAD"], origin)).trim();
+  const originTags = await remoteTags();
+  const local: RegistryDeps = { ...deps, bot: runAsLocalBot, remote: false };
+  const bot = `${LOCAL_BOT.name} <${LOCAL_BOT.email}>`;
+
+  appendFileSync(path.join(root, "work", SKILL, "SKILL.md"), "\nv3 marker\n");
+  const installed = await install(SKILL, { issue: 9, network: false }, local);
+  assert.equal(installed.installed, SKILL, JSON.stringify(installed));
+  assert.equal(
+    (
+      await git([
+        "for-each-ref",
+        "--format=%(taggername) %(taggeremail)",
+        "refs/tags/skill/text-stats@v3",
+      ])
+    ).trim(),
+    bot
+  );
+  const rolledBack = await rollbackSkill(SKILL, { to: "v2" }, local);
+  assert.equal(rolledBack.ok, true, JSON.stringify(rolledBack));
+  const removed = await removeSkill(SKILL, { deleteTags: true }, local);
+  assert.equal(removed.ok, true, JSON.stringify(removed));
+  assert.deepEqual(removed.ok && removed.deletedTags, [
+    "skill/text-stats@v1",
+    "skill/text-stats@v2",
+    "skill/text-stats@v3",
+  ]);
+
+  assert.deepEqual(
+    (await git(["log", "-3", "--format=%an <%ae>|%cn <%ce>|%G?|%s"]))
+      .trim()
+      .split("\n"),
+    [
+      `${bot}|${bot}|N|chore(registry): remove text-stats`,
+      `${bot}|${bot}|N|chore(registry): rollback text-stats to v2`,
+      `${bot}|${bot}|N|feat(skills): install text-stats v3`,
+    ]
+  );
+  assert.equal((await git(["rev-parse", "HEAD"], origin)).trim(), originHead);
+  assert.deepEqual(await remoteTags(), originTags);
 });
 
 test("entries without history are migrated on read and saved migrated", async () => {

@@ -1,8 +1,9 @@
 // PreToolUse hook (matcher `*`, runs on every tool call so it stays sync and
-// incremental): caps skill-builder invocations (`MAX_BUILDER_ITERATIONS`) and
-// USD spend (`BUDGET_USD_PER_RUN`) per Claude Code session. Over budget only
-// a plain `node scripts/tracker.ts …` and a Read of `work/<skill>/issue.json`
-// (the issue number for `tracker.ts blocked`) pass.
+// incremental): caps skill-builder invocations (`MAX_BUILDER_ITERATIONS`,
+// default 3) and USD spend (`BUDGET_USD_PER_RUN`, default 5) per Claude Code
+// session; an invalid value denies every tool call. Over budget only a plain
+// `node scripts/tracker.ts …` and a Read of `work/<skill>/issue.json` (the
+// issue number for `tracker.ts blocked`) pass.
 //
 // State: `work/.run/<session_id>.json` with the builder invocation count, the
 // byte offset read so far per transcript file and the usage per model. Each
@@ -35,6 +36,10 @@ import {
 } from "../lib/pricing.ts";
 import { type Decision, type HookInput, REPO_ROOT, runHook } from "./lib.ts";
 import { parseCommand } from "./shell.ts";
+
+/** Caps when `.env` (or the environment) does not set them. */
+const DEFAULT_BUDGET_USD = 5;
+const DEFAULT_MAX_BUILDER_ITERATIONS = 3;
 
 export interface Limits {
   budgetUsd: number;
@@ -476,8 +481,13 @@ export const peekRunUsage = (
 ): UsageEntry[] =>
   Object.values(syncedState(statePath(root, sessionId), sessionId).usage);
 
-const positiveNumber = (name: string): number => {
-  const value = Number(process.env[name]);
+/** `name` from the env; unset or empty means `fallback`, anything else must be positive. */
+const positiveNumber = (name: string, fallback: number): number => {
+  const raw = process.env[name]?.trim();
+  if (!raw) {
+    return fallback;
+  }
+  const value = Number(raw);
   if (!(Number.isFinite(value) && value > 0)) {
     throw new Error(`${name} must be a positive number in .env`);
   }
@@ -488,8 +498,11 @@ if (import.meta.main) {
   runHook((input) => {
     loadDotEnv();
     return checkBudget(input, REPO_ROOT, {
-      budgetUsd: positiveNumber("BUDGET_USD_PER_RUN"),
-      maxBuilderIterations: positiveNumber("MAX_BUILDER_ITERATIONS"),
+      budgetUsd: positiveNumber("BUDGET_USD_PER_RUN", DEFAULT_BUDGET_USD),
+      maxBuilderIterations: positiveNumber(
+        "MAX_BUILDER_ITERATIONS",
+        DEFAULT_MAX_BUILDER_ITERATIONS
+      ),
     });
   });
 }

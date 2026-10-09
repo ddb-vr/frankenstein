@@ -16,6 +16,7 @@ import { promisify } from "node:util";
 import { checkBudget } from "./hooks/budget.ts";
 import { hookInput } from "./hooks/testing.ts";
 import { installAuditFixture } from "./lib/audit-fixture.ts";
+import { parseLocalIssue } from "./lib/local-issues.ts";
 import { computeCost } from "./lib/pricing.ts";
 import {
   formatBlockedComment,
@@ -23,12 +24,23 @@ import {
   formatOpenBody,
   issueTitle,
   parseUsage,
+  type RunOptions,
   run,
 } from "./tracker.ts";
 
 const execFileAsync = promisify(execFile);
 const TRACKER = join(import.meta.dirname, "tracker.ts");
 const REPO = "acme/frankenstein";
+const PAT_ENV = { GH_TOKEN: "ghp_test", GITHUB_REPO: REPO };
+const BACKEND_ENV = [
+  "GITHUB_APP_ID",
+  "GITHUB_APP_PRIVATE_KEY_PATH",
+  "GITHUB_APP_INSTALLATION_ID",
+  "GITHUB_REPO",
+  "GH_TOKEN",
+] as const;
+const QUIET: RunOptions = { log: () => undefined };
+const LOCAL_NOT_FOUND = /local issue #9 not found \(tracker\/issues\/9\.md\)/;
 const USAGE_SHAPE_ERROR = /JSON array/;
 const NO_ACTIVE_RUN = /no active run/;
 const CLEAN_AUDIT = {
@@ -73,18 +85,17 @@ after(async () => {
 });
 
 // Runs the CLI in a scratch cwd with no GitHub env, so it can never reach the
-// real repo even if dry-run were broken.
+// real repo even if dry-run were broken. The backend variables are set empty:
+// `.env` never overrides a variable that is already set.
 const runTracker = async (
   args: string[],
   env: Record<string, string> = {}
 ): Promise<unknown> => {
-  const cleanEnv = Object.fromEntries(
-    Object.entries(process.env).filter(([key]) => !key.startsWith("GITHUB_"))
-  );
+  const noBackend = Object.fromEntries(BACKEND_ENV.map((name) => [name, ""]));
   const { stdout } = await execFileAsync(
     process.execPath,
     [...process.execArgv, TRACKER, ...args],
-    { cwd: workDir, env: { ...cleanEnv, ...env } }
+    { cwd: workDir, env: { ...process.env, ...noBackend, ...env } }
   );
   const lines = stdout.trim().split("\n");
   assert.equal(lines.length, 1, "output is a single JSON line");
@@ -168,9 +179,10 @@ test("parseUsage rejects malformed usage", () => {
 test("open --dry-run plans labels and issue creation", async () => {
   const output = await runTracker(
     ["open", "--skill", "pdf-merge", "--summary", "Merge PDFs.", "--dry-run"],
-    { GITHUB_REPO: REPO }
+    PAT_ENV
   );
   assert.deepEqual(output, {
+    backend: "pat",
     calls: [
       {
         args: [
@@ -222,19 +234,29 @@ test("open --dry-run plans labels and issue creation", async () => {
   });
 });
 
-// Runs `run` in-process with `GITHUB_REPO` unset, restoring it afterwards
-// (dry-run loads `<root>/.env` into `process.env`).
-const withoutGitHubRepo = async <T>(action: () => Promise<T>): Promise<T> => {
-  const saved = process.env.GITHUB_REPO;
-  delete process.env.GITHUB_REPO;
+// Runs `action` with exactly `vars` of the backend env set, restoring it
+// afterwards (`run` loads `<root>/.env` into `process.env`).
+const withEnv = async <T>(
+  vars: Partial<Record<(typeof BACKEND_ENV)[number], string>>,
+  action: () => Promise<T>
+): Promise<T> => {
+  const saved = BACKEND_ENV.map((name) => [name, process.env[name]] as const);
+  const apply = (
+    entries: readonly (readonly [string, string | undefined])[]
+  ): void => {
+    for (const [name, value] of entries) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+  };
+  apply(BACKEND_ENV.map((name) => [name, vars[name]]));
   try {
     return await action();
   } finally {
-    if (saved === undefined) {
-      delete process.env.GITHUB_REPO;
-    } else {
-      process.env.GITHUB_REPO = saved;
-    }
+    apply(saved);
   }
 };
 
@@ -247,29 +269,40 @@ const BLOCKED_DRY_RUN = [
   "--dry-run",
 ];
 
-test("dry-run uses a placeholder repo when GITHUB_REPO is unset and no .env", async () => {
+test("dry-run uses a placeholder repo when the GitHub App has no GITHUB_REPO", async () => {
   const root = await mkdtemp(join(workDir, "no-env-"));
-  const output = (await withoutGitHubRepo(() =>
-    run(BLOCKED_DRY_RUN, { root })
-  )) as { repo: string };
+  const output = (await withEnv(
+    {
+      GITHUB_APP_ID: "1",
+      GITHUB_APP_INSTALLATION_ID: "2",
+      GITHUB_APP_PRIVATE_KEY_PATH: "/keys/app.pem",
+    },
+    () => run(BLOCKED_DRY_RUN, { ...QUIET, root })
+  )) as { backend: string; repo: string };
+  assert.equal(output.backend, "github-app");
   assert.equal(output.repo, "OWNER/REPO");
 });
 
-test("dry-run reads GITHUB_REPO from the root's .env", async () => {
+test("dry-run reads the backend and GITHUB_REPO from the root's .env", async () => {
   const root = await mkdtemp(join(workDir, "with-env-"));
-  await writeFile(join(root, ".env"), "GITHUB_REPO=from/dotenv\n");
-  const output = (await withoutGitHubRepo(() =>
-    run(BLOCKED_DRY_RUN, { root })
-  )) as { repo: string };
+  await writeFile(
+    join(root, ".env"),
+    "GITHUB_REPO=from/dotenv\nGH_TOKEN=ghp_dotenv\n"
+  );
+  const output = (await withEnv({}, () =>
+    run(BLOCKED_DRY_RUN, { ...QUIET, root })
+  )) as { backend: string; repo: string };
+  assert.equal(output.backend, "pat");
   assert.equal(output.repo, "from/dotenv");
 });
 
 test("blocked --dry-run plans label and comment", async () => {
   const output = await runTracker(
     ["blocked", "--issue", "7", "--reason", "Docker unavailable", "--dry-run"],
-    { GITHUB_REPO: REPO }
+    PAT_ENV
   );
   assert.deepEqual(output, {
+    backend: "pat",
     calls: [
       {
         args: ["issue", "edit", "7", "--repo", REPO, "--add-label", "blocked"],
@@ -285,33 +318,27 @@ test("blocked --dry-run plans label and comment", async () => {
   });
 });
 
-test("done --dry-run plans unblock, cost and audit comment, close", async (t) => {
-  const previousRepo = process.env.GITHUB_REPO;
-  process.env.GITHUB_REPO = REPO;
-  t.after(() => {
-    if (previousRepo === undefined) {
-      delete process.env.GITHUB_REPO;
-    } else {
-      process.env.GITHUB_REPO = previousRepo;
-    }
-  });
+test("done --dry-run plans unblock, cost and audit comment, close", async () => {
   const { root } = await installAuditFixture("clean", join(workDir, "audited"));
-  const output = await run(
-    [
-      "done",
-      "--issue",
-      "7",
-      "--summary",
-      "Built pdf-merge.",
-      "--usage",
-      usagePath,
-      "--version",
-      "v2",
-      "--dry-run",
-    ],
-    { root }
+  const output = await withEnv(PAT_ENV, () =>
+    run(
+      [
+        "done",
+        "--issue",
+        "7",
+        "--summary",
+        "Built pdf-merge.",
+        "--usage",
+        usagePath,
+        "--version",
+        "v2",
+        "--dry-run",
+      ],
+      { ...QUIET, root }
+    )
   );
   assert.deepEqual(output, {
+    backend: "pat",
     calls: [
       {
         args: ["issue", "view", "7", "--repo", REPO, "--json", "labels"],
@@ -349,7 +376,9 @@ test("invalid input exits non-zero with a JSON error", async () => {
     runTracker(["blocked", "--issue", "abc", "--reason", "x", "--dry-run"]),
     (error: { code?: number; stderr?: string }) => {
       assert.equal(error.code, 1);
-      assert.deepEqual(JSON.parse(error.stderr ?? ""), {
+      // The backend log line comes first; the error is the last line.
+      const lines = (error.stderr ?? "").trim().split("\n");
+      assert.deepEqual(JSON.parse(lines.at(-1) ?? ""), {
         error: "--issue must be a positive integer",
       });
       return true;
@@ -361,9 +390,12 @@ test("done without --usage reports the session in work/.run/current.json", async
   const root = join(workDir, "repo");
   await mkdir(root, { recursive: true });
   const done = () =>
-    run(["done", "--issue", "7", "--summary", "Built.", "--dry-run"], {
-      root,
-    }) as Promise<{ result: { totalUsd: number } }>;
+    withEnv(PAT_ENV, () =>
+      run(["done", "--issue", "7", "--summary", "Built.", "--dry-run"], {
+        ...QUIET,
+        root,
+      })
+    ) as Promise<{ result: { totalUsd: number } }>;
   await assert.rejects(done(), NO_ACTIVE_RUN);
 
   // Each session's budget hook call points current.json at that session.
@@ -439,9 +471,11 @@ test("done --dry-run reads session usage without touching budget state", async (
   const stateBefore = await readFile(stateFile, "utf8");
   const entriesBefore = await readdir(runDir);
 
-  const output = (await run(
-    ["done", "--issue", "7", "--summary", "Built.", "--dry-run"],
-    { root }
+  const output = (await withEnv(PAT_ENV, () =>
+    run(["done", "--issue", "7", "--summary", "Built.", "--dry-run"], {
+      ...QUIET,
+      root,
+    })
   )) as { result: { totalUsd: number } };
   assert.equal(
     output.result.totalUsd,
@@ -457,4 +491,151 @@ test("done --dry-run reads session usage without touching budget state", async (
   );
   assert.equal(await readFile(stateFile, "utf8"), stateBefore);
   assert.deepEqual(await readdir(runDir), entriesBefore);
+});
+
+test("local backend keeps open, blocked and done in tracker/issues/<n>.md", async () => {
+  const root = await mkdtemp(join(workDir, "local-lifecycle-"));
+  const logs: string[] = [];
+  const times = [
+    "2026-10-09T10:00:00.000Z",
+    "2026-10-09T10:05:00.000Z",
+    "2026-10-09T10:30:00.000Z",
+  ];
+  const clock = [...times];
+  const options: RunOptions = {
+    log: (line) => logs.push(line),
+    now: () => new Date(clock.shift() ?? ""),
+    root,
+  };
+  const file = join(root, "tracker", "issues", "1.md");
+  const issue = async () =>
+    parseLocalIssue(await readFile(file, "utf8"), "tracker/issues/1.md");
+
+  const opened = await withEnv({}, () =>
+    run(["open", "--skill", "pdf-merge", "--summary", "Merge PDFs."], options)
+  );
+  assert.deepEqual(opened, { issue: 1, url: "tracker/issues/1.md" });
+  assert.deepEqual(
+    JSON.parse(
+      await readFile(join(root, "work", "pdf-merge", "issue.json"), "utf8")
+    ),
+    opened
+  );
+  assert.deepEqual(await issue(), {
+    body: formatOpenBody("pdf-merge", "Merge PDFs."),
+    closedAt: null,
+    createdAt: times[0],
+    labels: ["skill-build"],
+    state: "open",
+    title: "skill: pdf-merge",
+    updatedAt: times[0],
+  });
+
+  assert.deepEqual(
+    await withEnv({}, () =>
+      run(
+        ["blocked", "--issue", "1", "--reason", "Docker unavailable"],
+        options
+      )
+    ),
+    { issue: 1, state: "blocked" }
+  );
+  const blocked = await issue();
+  assert.equal(blocked.state, "blocked");
+  assert.deepEqual(blocked.labels, ["skill-build", "blocked"]);
+
+  assert.deepEqual(
+    await withEnv({}, () =>
+      run(
+        [
+          "done",
+          "--issue",
+          "1",
+          "--summary",
+          "Built pdf-merge.",
+          "--usage",
+          usagePath,
+          "--version",
+          "v1",
+        ],
+        options
+      )
+    ),
+    { issue: 1, state: "done", totalUsd: 11 }
+  );
+  const done = await issue();
+  assert.deepEqual(
+    { ...done, body: "" },
+    {
+      body: "",
+      closedAt: times[2],
+      createdAt: times[0],
+      labels: ["skill-build"],
+      state: "done",
+      title: "skill: pdf-merge",
+      updatedAt: times[2],
+    }
+  );
+  // Outside Claude Code there is no session to audit; the comment says so.
+  const [doneWithoutAudit] = formatDoneComment(
+    "Built pdf-merge.",
+    computeCost(SAMPLE_USAGE),
+    { error: "" },
+    "v1"
+  ).split("**Sandbox audit:**");
+  const comments = [
+    formatOpenBody("pdf-merge", "Merge PDFs.").trimEnd(),
+    "",
+    "---",
+    "",
+    `**Comment** (${times[1]})`,
+    "",
+    formatBlockedComment("Docker unavailable").trimEnd(),
+    "",
+    "---",
+    "",
+    `**Comment** (${times[2]})`,
+    "",
+    `${doneWithoutAudit}**Sandbox audit:** unavailable (`,
+  ].join("\n");
+  assert.ok(done.body.startsWith(comments), done.body);
+  assert.match(done.body, NO_ACTIVE_RUN);
+  // One backend line per run.
+  assert.equal(logs.length, 3);
+  assert.ok(logs.every((line) => line.startsWith("tracker backend: local")));
+});
+
+test("local backend numbers issues, refuses unknown ones and writes nothing on dry-run", async () => {
+  const root = await mkdtemp(join(workDir, "local-numbers-"));
+  const open = (...flags: string[]) =>
+    withEnv({}, () =>
+      run(["open", "--skill", "csv-sum", "--summary", "Sum.", ...flags], {
+        ...QUIET,
+        root,
+      })
+    );
+  assert.deepEqual(await open(), { issue: 1, url: "tracker/issues/1.md" });
+  assert.deepEqual(await open(), { issue: 2, url: "tracker/issues/2.md" });
+  await assert.rejects(
+    withEnv({}, () =>
+      run(["blocked", "--issue", "9", "--reason", "x"], { ...QUIET, root })
+    ),
+    LOCAL_NOT_FOUND
+  );
+
+  const planned = (await open("--dry-run")) as {
+    backend: string;
+    files: { content: string; path: string }[];
+    result: unknown;
+  };
+  assert.equal(planned.backend, "local");
+  assert.deepEqual(planned.result, { issue: 3, url: "tracker/issues/3.md" });
+  assert.deepEqual(
+    planned.files.map(({ path }) => path),
+    ["tracker/issues/3.md"]
+  );
+  assert.deepEqual(await readdir(join(root, "tracker", "issues")), [
+    "1.md",
+    "2.md",
+  ]);
 });

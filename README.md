@@ -61,20 +61,45 @@ closed.
 | No install without green tests **and** an approve verdict | The install script re-checks the lock hash, the review and a fresh test run                                                                                                        |
 | Budget can't run away                                     | Caps on builder iterations and USD spend per run                                                                                                                                   |
 | Only a human can disable, roll back or remove a skill     | Those commands are blocked for the agent                                                                                                                                           |
-| Every GitHub write is traceable                           | Commits, tags and issues come from a GitHub App bot                                                                                                                                |
+| Every GitHub write is traceable                           | Commits, tags and issues come from a GitHub App bot (in local mode: `frankenstein-bot`, never your git identity)                                                                   |
 
 There's even a **deterministic audit** (`/audit`) that replays the session transcript and proves **0 host executions**.
 
-## 🚀 Quick start
+## 🚀 Quick start for judges
+
+No GitHub App key and no `.env` needed: a fresh clone runs end to end in **local mode**.
+
+Requires **Node.js 24**, **Docker** (running) and **Claude Code** with your own account.
 
 ```sh
+git clone https://github.com/ddb-vr/frankenstein.git && cd frankenstein
 npm install
-cp .env.example .env      # GitHub App credentials + budget caps
-npm run sandbox:build     # build the Docker sandbox
-claude                    # then ask for something it can't do yet
+npm run sandbox:build     # build the Docker sandbox image
+claude                    # start Claude Code in the repo root
 ```
 
-Requires **Node.js ≥ 24.x** and **Docker**.
+Then try a task on the sample data in [`demo/data/orders.csv`](demo/data/orders.csv):
+
+- *"How much did I earn per month from completed orders in demo/data/orders.csv?"* No skill does that yet: it asks you
+  a few questions, builds, tests, reviews and installs one, then answers.
+- *"Who are my repeat customers in demo/data/orders.csv?"* An installed skill answers straight away, in the sandbox.
+
+Afterwards look at `npm run skills -- list`, the new commit and tag in `git log --oneline --decorate -3` and the build
+issue in `tracker/issues/`.
+
+### Tracker modes
+
+Picked automatically from the environment or `.env` ([`.env.example`](.env.example)); each run logs the one it uses.
+
+- **github-app**: `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_PATH`, `GITHUB_APP_INSTALLATION_ID` set: GitHub issues,
+  commits, tags and pushes as our bot.
+- **pat**: else `GH_TOKEN` and `GITHUB_REPO` set: the same GitHub issues as your token's user; commits and tags stay
+  local.
+- **local**: otherwise: issues in `tracker/issues/<n>.md`; commits and tags local as `frankenstein-bot`, nothing pushed.
+
+Proof of the full GitHub integration: the
+bot's [build issues](https://github.com/ddb-vr/frankenstein/issues?q=label%3Askill-build) (each closed with a cost table
+and sandbox audit) and the [skill version tags](https://github.com/ddb-vr/frankenstein/tags) in our public repo.
 
 ## 🎛️ You stay in control
 

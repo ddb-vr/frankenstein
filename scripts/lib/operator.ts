@@ -1,9 +1,10 @@
 // Operator control over the skill registry (`npm run skills -- <command>`).
 // `list` and `show` only read; the agent may run them. `disable`, `enable`,
 // `rollback` and `remove` are for a human in a terminal (`guard-bash.ts`
-// denies them to the agent): each commits as the GitHub App bot
-// (`chore(registry): <action> <name>`), pushes and restores everything when a
-// step before the push fails.
+// denies them to the agent): each commits as the bot
+// (`chore(registry): <action> <name>`), pushes when the GitHub App backend is
+// active (`deps.remote`) and restores everything when a step before the push
+// fails.
 
 import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
@@ -444,11 +445,14 @@ export const rollbackSkill = (
     return { commit, version };
   });
 
-/** `skill/<name>@vN` tags on origin; of every skill without `name`. */
+/** `skill/<name>@vN` tags on origin; of every skill without `name`. None without `remote`. */
 export const remoteVersionTags = async (
   deps: RegistryDeps,
   name?: string
 ): Promise<string[]> => {
+  if (!deps.remote) {
+    return [];
+  }
   const output = await deps.bot("git", [
     "-C",
     deps.root,
@@ -496,13 +500,13 @@ export const removeSkill = (
       );
       return committed;
     });
-    // Pushed: from here on nothing is rolled back.
+    // Committed (and pushed with `remote`): from here on nothing is rolled back.
     if (localTags.length > 0) {
       try {
         await deps.bot("git", ["-C", deps.root, "tag", "-d", ...localTags]);
       } catch (error) {
         throw new Error(
-          `removed and pushed as ${commit}, but deleting the local tags failed: ${message(error)}`,
+          `removed${deps.remote ? " and pushed" : ""} as ${commit}, but deleting the local tags failed: ${message(error)}`,
           { cause: error }
         );
       }
