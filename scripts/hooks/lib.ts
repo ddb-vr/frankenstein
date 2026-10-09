@@ -211,7 +211,9 @@ export const runHook = (decide: (input: HookInput) => Decision): void => {
   };
   const failClosed = (error: unknown): never =>
     finish(
-      `Blocked: hook ${name} failed (${error instanceof Error ? error.message : String(error)}). Do not work around it; report this to the user.`
+      `Blocked: hook ${name} failed (${
+        error instanceof Error ? error.message : String(error)
+      }). Do not work around it; report this to the user.`
     );
   process.on("uncaughtException", failClosed);
   let decision: Decision;

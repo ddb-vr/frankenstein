@@ -92,7 +92,9 @@ const confirmed = async (skills: readonly string[]): Promise<boolean> => {
   });
   try {
     const answer = await prompt.question(
-      `Remove ${skills.length === 0 ? "no skills" : skills.join(", ")} with all their tags (local and origin), and clear work/ and logs/? [y/N] `
+      `Remove ${
+        skills.length === 0 ? "no skills" : skills.join(", ")
+      } with all their tags (local and origin), and clear work/ and logs/? [y/N] `
     );
     return YES.test(answer.trim());
   } finally {

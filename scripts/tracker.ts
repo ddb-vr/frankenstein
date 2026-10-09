@@ -88,12 +88,16 @@ export const formatDoneComment = (
   );
   for (const row of cost.perModel) {
     lines.push(
-      `| \`${row.model}\` | ${formatCount(row.input)} | ${formatCount(row.cacheWrite)} | ${formatCount(row.cacheRead)} | ${formatCount(row.output)} | ${formatUsd(row.usd)} |`
+      `| \`${row.model}\` | ${formatCount(row.input)} | ${formatCount(row.cacheWrite)} | ${formatCount(row.cacheRead)} | ${formatCount(
+        row.output
+      )} | ${formatUsd(row.usd)} |`
     );
   }
   const { totals } = cost;
   lines.push(
-    `| **Total** | ${formatCount(totals.input)} | ${formatCount(totals.cacheWrite)} | ${formatCount(totals.cacheRead)} | ${formatCount(totals.output)} | **${formatUsd(cost.totalUsd)}** |`
+    `| **Total** | ${formatCount(totals.input)} | ${formatCount(totals.cacheWrite)} | ${formatCount(totals.cacheRead)} | ${formatCount(
+      totals.output
+    )} | **${formatUsd(cost.totalUsd)}** |`
   );
   lines.push(
     "",

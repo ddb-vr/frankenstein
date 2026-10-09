@@ -9,8 +9,8 @@ Lifecycle for building a new skill:
 
 1. **Gap detection** – decide whether an enabled skill covers the task; use an installed one only via
    `node scripts/run-skill.ts <skill> '<json>'`. See [Intake](#intake) step 1.
-2. **PRD + questions** – the `prd` agent drafts plain-language questions, you ask the user, then `prd` writes
-   `PRD.md` and `examples.json`. See [Intake](#intake) steps 2–4.
+2. **PRD + questions** – the `prd-writer` agent drafts plain-language questions, you ask the user, then
+   `prd-writer` writes `PRD.md` and `examples.json`. See [Intake](#intake) steps 2–4.
 3. **PRD review** – the `prd-reviewer` agent approves or rejects before anything is locked. See [Intake](#intake)
    step 5.
 4. **Source of truth confirmed by user** – user confirms the goal and `examples.json`; then lock it with
@@ -38,8 +38,8 @@ node scripts/run-skill.ts <skill> '{"statement":"/input/bank.csv"}' --mount demo
 - `--output out/<run>` gives the skill a writable `/output`; it must be a subdirectory of `out/`, never `out` itself.
   Answer from the skill's compact stdout summary and point the user to the files in `out/<run>/`; do not open them
   yourself.
-- When the task involves a user file, pass its repo-relative path (never its content) to the `prd` agent; it may read
-  the first few lines to learn the format (headers, separator, encoding).
+- When the task involves a user file, pass its repo-relative path (never its content) to the `prd-writer` agent; it
+  may read the first few lines to learn the format (headers, separator, encoding).
 
 ## Intake
 
@@ -53,35 +53,40 @@ answers. Nothing is locked until the last step, so every loop back to **Write** 
    argument; for large inputs write it to a file and use `--input-file <path>` instead; user files via `--mount`, see
    [User files](#user-files)) and stop here. Otherwise tell the user in one line which capability is missing, then
    continue.
-2. **Questions.** Delegate to the `prd` agent with `mode: questions`. Pass the user's request verbatim, all answers so
-   far, the round number and the paths of any user files involved.
+2. **Questions.** Delegate to the `prd-writer` agent with `mode: questions`. Pass the user's request verbatim, all
+   answers so far, the round number and the paths of any user files involved.
 3. **Grill me.** Follow the `grill-me` skill (`.claude/skills/grill-me/SKILL.md`): plain words in the user's language,
    no technical terms. Ask the returned questions with the built-in `AskUserQuestion` tool. It takes 1–4 questions per
    call and 2–4 options per question, and adds an "Other" row for free text. Put the recommended option first. If the
    tool is unavailable, ask in plain text in the `grill-me` fallback format (numbered questions, lettered options
    `a) … b) …`) and accept answers like `1b, 2a`, or `yes` for all recommended options.
-  - Prefer offered options over open questions.
-  - The cap is **6 rounds**. After each round, call `prd` again in `questions` mode only if it still has open points
-    that would change the examples.
-  - If the request is already precise (`prd` returns "No questions"), skip the grilling. Ask a single confirmation of
-    its assumptions instead.
-4. **Write.** Delegate to `prd` with `mode: write`. Pass the request, every question with its answer, the paths of any
-   user files involved, and any corrections or reviewer reasons. On a rewrite, also pass the skill name so it stays the
-   same.
+
+- Prefer offered options over open questions.
+- The cap is **6 rounds**. After each round, call `prd-writer` again in `questions` mode only if it still has open
+  points that would change the examples.
+- If the request is already precise (`prd-writer` returns "No questions"), skip the grilling. Ask a single
+  confirmation of its assumptions instead.
+
+4. **Write.** Delegate to `prd-writer` with `mode: write`. Pass the request, every question with its answer, the paths
+   of any user files involved, and any corrections or reviewer reasons. On a rewrite, also pass the skill name so it
+   stays the same.
 5. **PRD review.** Delegate to `prd-reviewer` with the skill name. Read the fenced `verdict` block.
-  - `approve`: continue with step 6.
-  - `reject`: go back to step 4 and pass the `reasons`. For reasons starting with `Ask the user:`, ask the user first
-    (step 3 format) and pass the answers too. Then review again.
-  - After 3 rejects, stop and show the user the reasons.
-6. **Confirm and lock.** Read `work/<skill>/examples.json` (the file that gets locked, not the `prd` reply) and show
-   the user the Goal sentence from `PRD.md`, a Markdown table of its examples (name | input | expected) and the content
-   of each synthetic file in `work/<skill>/fixtures/input/` (locked too). Ask "Is this correct?" with the options
-   *Yes, lock it* and *Needs changes*.
-  - On *Yes*, run `node scripts/lock.ts <skill>`. Intake is done. Continue with the lifecycle at **Open issue**.
-  - On corrections, go back to step 4 with them, then step 5 (review again), then confirm again.
-  - If the PRD's Network section says Needed, tell the user that every listed domain must be in
-    `FIXTURE_ALLOWED_DOMAINS` in `.env` before the build (you cannot read `.env`; the fixture recorder refuses other
-    domains).
+
+- `approve`: continue with step 6.
+- `reject`: go back to step 4 and pass the `reasons`. For reasons starting with `Ask the user:`, ask the user first
+  (step 3 format) and pass the answers too. Then review again.
+- After 3 rejects, stop and show the user the reasons.
+
+6. **Confirm and lock.** Read `work/<skill>/examples.json` (the file that gets locked, not the `prd-writer` reply) and
+   show the user the Goal sentence from `PRD.md`, a Markdown table of its examples (name | input | expected) and the
+   content of each synthetic file in `work/<skill>/fixtures/input/` (locked too). Ask "Is this correct?" with the
+   options *Yes, lock it* and *Needs changes*.
+
+- On *Yes*, run `node scripts/lock.ts <skill>`. Intake is done. Continue with the lifecycle at **Open issue**.
+- On corrections, go back to step 4 with them, then step 5 (review again), then confirm again.
+- If the PRD's Network section says Needed, tell the user that every listed domain must be in
+  `FIXTURE_ALLOWED_DOMAINS` in `.env` before the build (you cannot read `.env`; the fixture recorder refuses other
+  domains).
 
 ## Build, review, install
 

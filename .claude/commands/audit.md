@@ -22,7 +22,8 @@ Summarize it for the user in at most 8 lines, using only the JSON:
   `hostExecutions` > 0; otherwise **inconsistent logs**. When `deniedMounts` is not empty, never say just "clean":
   add the number of denied mount attempts to the verdict (e.g. "clean, 2 denied mount attempts").
 - `bashCommands`, `sandboxRuns`, `hostExecutions` and `denials` as numbers.
-- Mounted host paths: every `<host>` of `mounts[].mounts` with its mode (ro/rw), each once; "none" when `mounts` is empty.
+- Mounted host paths: every `<host>` of `mounts[].mounts` with its mode (ro/rw), each once; "none" when `mounts` is
+  empty.
 - Each denied mount attempt as `command` (shortened to 80 characters) — `reason`.
 - Each violation as `command` (shortened to 80 characters) — `reason`.
 - On an error, quote it and stop.

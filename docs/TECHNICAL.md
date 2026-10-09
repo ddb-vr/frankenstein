@@ -75,8 +75,8 @@ Skill contract:
   `–` decodes to the original text in the sandbox, both in its unit tests and via `run-skill.ts --mount`).
 - User files reach a skill only as paths to read-only mounts: the agent mounts files with `--mount`, asks the skill for
   a summary and points the user to the files in `out/`. Keeping file content out of the model is a prompt rule, not a
-  hook (there is no Read hook): agents are instructed not to read user data files, except the `prd` agent, which reads
-  the first few lines of a file to learn its format.
+  hook (there is no Read hook): agents are instructed not to read user data files, except the `prd-writer` agent,
+  which reads the first few lines of a file to learn its format.
 - `examples.json`: `{ skill, entry, examples: [{ name, input, expected, match? }] }`; `match` is `"exact"` (default) or
   `"subset"`; `"expected": { "error": true }` expects a handled error. Schema and validator: `scripts/lib/examples.ts`.
 
@@ -106,7 +106,11 @@ from the repo root):
 `npm run check`, `npm run typecheck`, `npm run sandbox:build` (npm ones without extra arguments) and read-only `git`
 (`status`, `log`, `diff`, `show`, …). `.claude/settings.json` pre-approves only that read-only `git` subset and denies
 `gh`, `git commit`/`tag`/`push` and reads of `.env`/`*.pem`: GitHub writes go through `scripts/tracker.ts` and
-`scripts/registry.ts` as the bot.
+`scripts/registry.ts` as the bot. Bot `git` runs never use the operator's git identity, whatever the environment
+(terminal, Claude desktop, IDE): inherited `GIT_*` variables are dropped, global and system git config is not read, and
+command-line config overrides the repo's own: commits and tags are unsigned, the only credential is the bot token (via
+`gh auth git-credential`, no prompts), GitHub SSH remotes are rewritten to HTTPS and any non-HTTPS transport is
+refused.
 
 ```sh
 node scripts/lock.ts <skill>                                  # after the user confirms examples.json
@@ -130,7 +134,8 @@ node scripts/run-skill.ts <skill> --input-file <path> [--mount <path>]... [--out
   argument or the `--input-file` content (exactly one; stdin is not read, and `guard-bash.ts` denies piping into
   entry points), and is passed to the skill on its stdin.
 - `--mount <path>` (repeatable) mounts a file or directory read-only at `/input/<basename>` (the basename as given; the
-  source is its real path); `--output out/<dir>` creates that subdirectory of `out/` if needed (never `out` itself) and mounts it read-write at
+  source is its real path); `--output out/<dir>` creates that subdirectory of `out/` if needed (never `out` itself) and
+  mounts it read-write at
   `/output`. The skill gets only the paths, in its JSON input, e.g.
   `node scripts/run-skill.ts bank-match '{"statement":"/input/bank.csv"}' --mount demo/data/bank.csv --output out/bank`.
   A path the policy refuses prints `{ "error": "mount denied: <path>: <reason>" }` (or `output denied: …`) and exits 1

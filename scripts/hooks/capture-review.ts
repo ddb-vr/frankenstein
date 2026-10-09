@@ -390,7 +390,9 @@ if (import.meta.main) {
     output = outputFor(outcome, input.source);
   } catch (error) {
     // Nothing was written, so install keeps refusing (fails closed).
-    const message = `capture-review failed, no verdict recorded: ${error instanceof Error ? error.message : String(error)}`;
+    const message = `capture-review failed, no verdict recorded: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
     logDecision({
       decision: "allow",
       hook: "capture-review",

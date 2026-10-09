@@ -34,7 +34,9 @@ export const requireEnvVars = (
   const missing = names.filter((name) => !env[name]?.trim());
   if (missing.length > 0) {
     throw new Error(
-      `Missing required env var${missing.length === 1 ? "" : "s"} ${missing.join(", ")}: set ${missing.length === 1 ? "it" : "them"} in .env (see .env.example)`
+      `Missing required env var${missing.length === 1 ? "" : "s"} ${missing.join(", ")}: set ${
+        missing.length === 1 ? "it" : "them"
+      } in .env (see .env.example)`
     );
   }
 };

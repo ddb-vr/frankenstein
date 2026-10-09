@@ -11,7 +11,6 @@ import { hashExamples } from "../lock.ts";
 import { SKILL_NAME } from "./examples.ts";
 import {
   applyChange,
-  BOT_CREDENTIALS,
   commitChange,
   disabledSkillPath,
   type HistoryAction,
@@ -286,7 +285,12 @@ const operate = async (
   >
 ): Promise<OperatorResult> => {
   try {
-    return { action, name, ok: true, ...(await run()) };
+    return {
+      action,
+      name,
+      ok: true,
+      ...(await run()),
+    };
   } catch (error) {
     return { action, name, ok: false, reason: message(error) };
   }
@@ -448,7 +452,6 @@ export const remoteVersionTags = async (
   const output = await deps.bot("git", [
     "-C",
     deps.root,
-    ...BOT_CREDENTIALS,
     "ls-remote",
     "--tags",
     "origin",

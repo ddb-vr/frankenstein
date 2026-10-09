@@ -1,6 +1,140 @@
-{"parentUuid":null,"isSidechain":false,"type":"assistant","uuid":"f262e462-431d-578a-bb8f-be56ab973973","timestamp":"2026-10-09T10:00:01.000Z","cwd":"__ROOT__","sessionId":"7c2e9a41-5b3d-4f8e-a1c6-0d9b8e7f6a52","version":"2.1.295","message":{"model":"claude-sonnet-5-5","id":"msg_mount0","type":"message","role":"assistant","content":[{"type":"tool_use","id":"toolu_01Mount0xxxxxxxxxxxxxxxx","name":"Bash","input":{"command":"node scripts/run-skill.ts line-count '{\"file\":\"/input/bank.csv\"}' --mount demo/data/bank.csv --output out/test"}}]}}
-{"parentUuid":"f262e462-431d-578a-bb8f-be56ab973973","isSidechain":false,"type":"user","uuid":"aa0bfbba-2cb5-5cad-a4d8-641e98a2b589","timestamp":"2026-10-09T10:00:02.400Z","cwd":"__ROOT__","sessionId":"7c2e9a41-5b3d-4f8e-a1c6-0d9b8e7f6a52","version":"2.1.295","permissionDecision":{"decision":"accept","source":"config","reasonType":"mode"},"message":{"role":"user","content":[{"tool_use_id":"toolu_01Mount0xxxxxxxxxxxxxxxx","type":"tool_result","content":"{\"file\":\"bank.csv\",\"firstLine\":\"date;amount;counterparty\",\"lines\":3,\"output\":\"bank.csv.lines.txt\"}","is_error":false}]}}
-{"parentUuid":"aa0bfbba-2cb5-5cad-a4d8-641e98a2b589","isSidechain":false,"type":"assistant","uuid":"564c3b4b-b6f4-56d0-bf58-c219cb74573a","timestamp":"2026-10-09T10:00:05.000Z","cwd":"__ROOT__","sessionId":"7c2e9a41-5b3d-4f8e-a1c6-0d9b8e7f6a52","version":"2.1.295","message":{"model":"claude-sonnet-5-5","id":"msg_mount1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"toolu_01Mount1xxxxxxxxxxxxxxxx","name":"Bash","input":{"command":"node scripts/run-skill.ts line-count '{}' --mount .env"}}]}}
-{"parentUuid":"564c3b4b-b6f4-56d0-bf58-c219cb74573a","isSidechain":false,"type":"user","uuid":"db6cd388-0abf-538a-8503-dd3358d93458","timestamp":"2026-10-09T10:00:05.100Z","cwd":"__ROOT__","sessionId":"7c2e9a41-5b3d-4f8e-a1c6-0d9b8e7f6a52","version":"2.1.295","permissionDecision":{"decision":"reject","source":"hook","reasonType":"hook"},"message":{"role":"user","content":[{"tool_use_id":"toolu_01Mount1xxxxxxxxxxxxxxxx","type":"tool_result","content":"PreToolUse:Bash hook error: Blocked: shell access to secrets (.env, *.pem). Scripts load .env themselves; never read, copy or print it (`.env.example` lists the variables).","is_error":true}]}}
-{"parentUuid":"db6cd388-0abf-538a-8503-dd3358d93458","isSidechain":false,"type":"assistant","uuid":"bfb32a44-e459-58e3-8c7b-ba490ecc3c07","timestamp":"2026-10-09T10:00:07.000Z","cwd":"__ROOT__","sessionId":"7c2e9a41-5b3d-4f8e-a1c6-0d9b8e7f6a52","version":"2.1.295","message":{"model":"claude-sonnet-5-5","id":"msg_mount2","type":"message","role":"assistant","content":[{"type":"tool_use","id":"toolu_01Mount2xxxxxxxxxxxxxxxx","name":"Bash","input":{"command":"node scripts/run-skill.ts line-count '{\"file\":\"/input/demo\"}' --mount /Users/demo"}}]}}
-{"parentUuid":"bfb32a44-e459-58e3-8c7b-ba490ecc3c07","isSidechain":false,"type":"user","uuid":"256bfca0-761e-5058-8d12-d39fd1b216f2","timestamp":"2026-10-09T10:00:07.300Z","cwd":"__ROOT__","sessionId":"7c2e9a41-5b3d-4f8e-a1c6-0d9b8e7f6a52","version":"2.1.295","permissionDecision":{"decision":"accept","source":"config","reasonType":"mode"},"message":{"role":"user","content":[{"tool_use_id":"toolu_01Mount2xxxxxxxxxxxxxxxx","type":"tool_result","content":"Exit code 1\n{\"error\":\"mount denied: /Users/demo: it is or contains the home directory\"}","is_error":true}]}}
+{
+  "parentUuid": null,
+  "isSidechain": false,
+  "type": "assistant",
+  "uuid": "f262e462-431d-578a-bb8f-be56ab973973",
+  "timestamp": "2026-10-09T10:00:01.000Z",
+  "cwd": "__ROOT__",
+  "sessionId": "7c2e9a41-5b3d-4f8e-a1c6-0d9b8e7f6a52",
+  "version": "2.1.295",
+  "message": {
+    "model": "claude-sonnet-5-5",
+    "id": "msg_mount0",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_01Mount0xxxxxxxxxxxxxxxx",
+        "name": "Bash",
+        "input": {
+          "command": "node scripts/run-skill.ts line-count '{\"file\":\"/input/bank.csv\"}' --mount demo/data/bank.csv --output out/test"
+        }
+      }
+    ]
+  }
+}
+{
+  "parentUuid": "f262e462-431d-578a-bb8f-be56ab973973",
+  "isSidechain": false,
+  "type": "user",
+  "uuid": "aa0bfbba-2cb5-5cad-a4d8-641e98a2b589",
+  "timestamp": "2026-10-09T10:00:02.400Z",
+  "cwd": "__ROOT__",
+  "sessionId": "7c2e9a41-5b3d-4f8e-a1c6-0d9b8e7f6a52",
+  "version": "2.1.295",
+  "permissionDecision": {"decision": "accept", "source": "config", "reasonType": "mode"},
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "tool_use_id": "toolu_01Mount0xxxxxxxxxxxxxxxx",
+        "type": "tool_result",
+        "content": "{\"file\":\"bank.csv\",\"firstLine\":\"date;amount;counterparty\",\"lines\":3,\"output\":\"bank.csv.lines.txt\"}",
+        "is_error": false
+      }
+    ]
+  }
+}
+{
+  "parentUuid": "aa0bfbba-2cb5-5cad-a4d8-641e98a2b589",
+  "isSidechain": false,
+  "type": "assistant",
+  "uuid": "564c3b4b-b6f4-56d0-bf58-c219cb74573a",
+  "timestamp": "2026-10-09T10:00:05.000Z",
+  "cwd": "__ROOT__",
+  "sessionId": "7c2e9a41-5b3d-4f8e-a1c6-0d9b8e7f6a52",
+  "version": "2.1.295",
+  "message": {
+    "model": "claude-sonnet-5-5",
+    "id": "msg_mount1",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_01Mount1xxxxxxxxxxxxxxxx",
+        "name": "Bash",
+        "input": {"command": "node scripts/run-skill.ts line-count '{}' --mount .env"}
+      }
+    ]
+  }
+}
+{
+  "parentUuid": "564c3b4b-b6f4-56d0-bf58-c219cb74573a",
+  "isSidechain": false,
+  "type": "user",
+  "uuid": "db6cd388-0abf-538a-8503-dd3358d93458",
+  "timestamp": "2026-10-09T10:00:05.100Z",
+  "cwd": "__ROOT__",
+  "sessionId": "7c2e9a41-5b3d-4f8e-a1c6-0d9b8e7f6a52",
+  "version": "2.1.295",
+  "permissionDecision": {"decision": "reject", "source": "hook", "reasonType": "hook"},
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "tool_use_id": "toolu_01Mount1xxxxxxxxxxxxxxxx",
+        "type": "tool_result",
+        "content": "PreToolUse:Bash hook error: Blocked: shell access to secrets (.env, *.pem). Scripts load .env themselves; never read, copy or print it (`.env.example` lists the variables).",
+        "is_error": true
+      }
+    ]
+  }
+}
+{
+  "parentUuid": "db6cd388-0abf-538a-8503-dd3358d93458",
+  "isSidechain": false,
+  "type": "assistant",
+  "uuid": "bfb32a44-e459-58e3-8c7b-ba490ecc3c07",
+  "timestamp": "2026-10-09T10:00:07.000Z",
+  "cwd": "__ROOT__",
+  "sessionId": "7c2e9a41-5b3d-4f8e-a1c6-0d9b8e7f6a52",
+  "version": "2.1.295",
+  "message": {
+    "model": "claude-sonnet-5-5",
+    "id": "msg_mount2",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_01Mount2xxxxxxxxxxxxxxxx",
+        "name": "Bash",
+        "input": {"command": "node scripts/run-skill.ts line-count '{\"file\":\"/input/demo\"}' --mount /Users/demo"}
+      }
+    ]
+  }
+}
+{
+  "parentUuid": "bfb32a44-e459-58e3-8c7b-ba490ecc3c07",
+  "isSidechain": false,
+  "type": "user",
+  "uuid": "256bfca0-761e-5058-8d12-d39fd1b216f2",
+  "timestamp": "2026-10-09T10:00:07.300Z",
+  "cwd": "__ROOT__",
+  "sessionId": "7c2e9a41-5b3d-4f8e-a1c6-0d9b8e7f6a52",
+  "version": "2.1.295",
+  "permissionDecision": {"decision": "accept", "source": "config", "reasonType": "mode"},
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "tool_use_id": "toolu_01Mount2xxxxxxxxxxxxxxxx",
+        "type": "tool_result",
+        "content": "Exit code 1\n{\"error\":\"mount denied: /Users/demo: it is or contains the home directory\"}",
+        "is_error": true
+      }
+    ]
+  }
+}

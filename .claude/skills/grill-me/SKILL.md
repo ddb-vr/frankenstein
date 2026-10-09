@@ -1,6 +1,6 @@
 ---
 name: grill-me
-description: Plain-language clarifying questions for a non-technical user, in rounds of multiple-choice questions with a recommended answer. Used by the frankenstein Intake (prd questions mode and the grill me step); it is a lifecycle skill, not a user capability, so never pick it to solve a task.
+description: Plain-language clarifying questions for a non-technical user, in rounds of multiple-choice questions with a recommended answer. Used by the frankenstein Intake (prd-writer questions mode and the grill me step); it is a lifecycle skill, not a user capability, so never pick it to solve a task.
 ---
 
 # Grill me (plain language)
@@ -39,7 +39,7 @@ do not write code.
 
 With the `AskUserQuestion` tool: one tool question per question, options as listed, recommended option first.
 
-Plain-text fallback (also the format the `prd` agent returns):
+Plain-text fallback (also the format the `prd-writer` agent returns):
 
 ```text
 1. <question in plain words>

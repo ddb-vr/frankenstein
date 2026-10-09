@@ -22,8 +22,10 @@ Example:
 node scripts/run-skill.ts orders-lapsed-customers '{"file":"/input/orders.csv","reference_date":"2026-10-09","days":60}' --mount demo/data/orders.csv --output out/lapsed
 ```
 
-→ `{"lapsed_customers":3,"total_spend_czk":4150.5,"orders_skipped":3,"top_lapsed_customers":[...],"output_file":"lapsed-customers.csv"}`
+→
+`{"lapsed_customers":3,"total_spend_czk":4150.5,"orders_skipped":3,"top_lapsed_customers":[...],"output_file":"lapsed-customers.csv"}`
 
-Bad input: `{"file":"/input/x.csv","reference_date":"2026-13-45"}` → `{"error":"reference_date is required and must be a valid YYYY-MM-DD date."}`
+Bad input: `{"file":"/input/x.csv","reference_date":"2026-13-45"}` →
+`{"error":"reference_date is required and must be a valid YYYY-MM-DD date."}`
 
 Network: not needed.

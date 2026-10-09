@@ -1,10 +1,10 @@
-# Task: Demo case – payment matching, reminders, (optional) sending via n8n
+# Task: Demo case – payment matching and reminders
 
-Work on branch `feat/demo`. Replaces the ARES rehearsal from `INTAKE.md` section 4 (keep the ARES notes as a fallback).
-Follow `CLAUDE.md` conventions.
+Work on branch `feat/demo`. Follow `CLAUDE.md` conventions. Feature freeze is on: no product changes in this task, only
+demo material.
 
-**Hard rule: no skill code, no n8n workflows, nothing the agent is supposed to build.** You prepare only data, texts,
-infrastructure and a run-of-show. Anything the team pre-writes in place of the agent is "the one unforgivable fake".
+**Hard rule: no skill code, nothing the agent is supposed to build.** You prepare only data, texts and a run-of-show.
+Anything the team pre-writes in place of the agent is "the one unforgivable fake".
 
 ## The story
 
@@ -14,14 +14,27 @@ The agent's ecosystem grows across fresh sessions:
    asks a few questions, builds a payment-matching skill, answers.
 2. **Session 2 (new):** "Who owes me more than 30 days? Prepare reminders." → the agent finds skill 1, builds a
    reminder-drafting skill on top of it, answers. Much cheaper than session 1.
-3. **Session 3 (optional finale, "hands"):** "Send them." → the agent builds a skill that sends the reminders through
-   n8n into a test inbox. Fallback finale without n8n: "Add the debtors' registered addresses from ARES."
 
-Pitch line: bank data never leaves a sandbox without network.
+Pitch line: bank data never passes through the model and never leaves a sandbox without network.
+
+## 0. Preparation rules
+
+1. **Encoding.** The Write tool always writes UTF-8. Write the statement as `demo/data/bank-statement.utf8.csv`, then
+   ask the user (Vito, on macOS) to convert it:
+   `iconv -f UTF-8 -t WINDOWS-1250 demo/data/bank-statement.utf8.csv > demo/data/bank-statement.csv`
+   and verify with `file -I demo/data/bank-statement.csv` (must not say utf-8). Then delete the `.utf8.csv` file. Do not
+   write helper scripts for this – the Bash guard will block interpreter calls, which is expected.
+2. **Answer key is checked by a human.** After writing `answer-key.md`, stop and ask the user to verify by hand at
+   least: the partial payment, the overpayment, the wrong VS, the missing VS, the payment with no invoice, the
+   two-invoices-in-one-transfer case and the outgoing payment. Add a line `Checked by: <name>` at the top only after the
+   user confirms.
+3. **Only data and texts in the repo.** If you generate data with any helper code, do not save or commit it. Nothing
+   under `demo/` may be executable code – judges must not mistake it for team-written skill code.
 
 ## 1. Data – `demo/data/`
 
-Realistic but fully synthetic (invented companies, IČO-like numbers are fine, no real people).
+Realistic but fully synthetic (invented companies, IČO-like numbers are fine, no real people). Files are passed to
+skills via `--mount`, so they must live in `demo/data/`.
 
 `bank-statement.csv` – export as a Czech bank would produce it:
 
@@ -40,40 +53,32 @@ issue date, due date, amount, currency.
   paid.
 
 `answer-key.md` – the correct result per invoice (paid / partially paid / unpaid / overpaid, amount outstanding, which
-bank rows matched) and the expected debtor list for session 2. This is for us to check the agent's output and to answer
-grill-me questions consistently. Never feed it to the agent.
+bank rows matched) and the expected debtor list for session 2. For us to check the agent's output and to answer grill-me
+questions consistently. Never feed it to the agent.
 
 ## 2. Texts – `demo/`
 
-- `tasks.md` – the exact prompts for sessions 1–3, phrased like a real user (Czech), never "build a tool/skill for X".
+- `tasks.md` – the exact prompts for sessions 1 and 2, phrased like a real user, never "build a tool/skill for X". State
+  the reference date explicitly in session 2.
 - `answers.md` – short prepared answers to the questions the agent will likely ask (matching rules, partial payments,
-  overpayments, tolerance, reminder tone, language, signature, what "30 days" counts from). Keep answers consistent with
+  overpayments, tolerance, reminder tone, language, signature, what "30 days" counts from). Consistent with
   `answer-key.md`.
-- `run-of-show.md` – the demo minute by minute: what is on screen (agent pane, `logs/<skill>/latest.log`, `docker ps`
-  loop, `registry.json`, GitHub issue), what we say, expected cost and duration per session, where to speed up the
-  recording. Target: whole demo in under 3 minutes of the pitch, recording can be longer.
+- `run-of-show.md` – what is on screen while recording (agent pane, `logs/<skill>/latest.log`, `docker ps` loop,
+  `registry.json`, GitHub issue), which moments to keep for the 90 s video, where to speed up.
 
-## 3. Infrastructure for the optional finale – `demo/infra/`
-
-Timebox: 45 minutes. If it does not run reliably by then, drop it and use the ARES finale.
-
-- `docker-compose.yml` with n8n and Mailpit (local test inbox with web UI). No real e-mail is ever sent.
-- Configure n8n to send mail through Mailpit SMTP. Create an n8n API key with the narrowest scope available.
-- `demo/infra/README.md`: how to start it, URLs, which env vars the agent's skill will need (`N8N_BASE_URL`,
-  `N8N_API_KEY`), and how a container reaches it (`host.docker.internal` on Docker Desktop for both macOS and Windows).
-- Do **not** create the reminder workflow in n8n – the agent must build it in session 3.
-
-## 4. Dress rehearsal (after `feat/operator` is merged)
+## 3. Dress rehearsal
 
 1. `npm run demo:reset -- --yes`, fresh Claude Code session in the repo root.
 2. Run sessions 1 and 2 exactly by `tasks.md`, answer with `answers.md`.
 3. Compare results against `answer-key.md`.
-4. Record per session: duration, number of builder iterations, cost from the closed issue, anything that went wrong.
-5. Write it into `demo/rehearsal-notes.md`, then reset again.
+4. Record per session: duration, number of builder iterations, cost from the closed issue, sandbox audit, anything that
+   went wrong.
+5. Write it into `demo/rehearsal-notes.md`, then reset again before the recording run.
 
 ## Done when
 
-- Data, texts and run-of-show are in `demo/`, `answer-key.md` checked by hand.
-- n8n + Mailpit either work (with README) or are explicitly dropped in `run-of-show.md`.
-- Dress rehearsal notes exist.
+- Data, texts and run-of-show are in `demo/`; `bank-statement.csv` is windows-1250, no `.utf8.csv` left, no code under
+  `demo/`.
+- `answer-key.md` starts with `Checked by: <name>`.
+- Two dress rehearsals done, notes written.
 - PR `feat: demo case data and run-of-show` is open.

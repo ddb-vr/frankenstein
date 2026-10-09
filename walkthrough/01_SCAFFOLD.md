@@ -87,8 +87,8 @@ identically on macOS and Windows, in Claude Code CLI and desktop GUI.
 .claude/
 ├── settings.json            # permissions + hooks (scaffold: hooks empty; now wires the four hooks)
 ├── agents/
-│   ├── prd.md
 │   ├── prd-reviewer.md
+│   ├── prd-writer.md
 │   ├── skill-builder.md
 │   └── skill-reviewer.md
 └── skills/
@@ -120,9 +120,9 @@ logs/.gitkeep
   `not implemented` to stderr and exits with code 1. Hooks (`scripts/hooks/*`) instead exit 0 for now, so they never
   block. (Scaffold only: all stubs are implemented now and hooks fail closed.)
 - `.claude/agents/*.md`: valid subagent frontmatter (`name`, `description`, `model`, `tools`) + a 3–5 line role
-  description. Models: `prd` sonnet, `prd-reviewer` opus, `skill-builder` sonnet, `skill-reviewer` opus.
-  - prd: estimates user intent, drafts questions for the user (returned to the main agent, never asked directly), writes
-    the source of truth summary and `examples.json`.
+  description. Models: `prd-writer` sonnet, `prd-reviewer` opus, `skill-builder` sonnet, `skill-reviewer` opus.
+  - prd-writer: estimates user intent, drafts questions for the user (returned to the main agent, never asked
+    directly), writes the source of truth summary and `examples.json`.
   - prd-reviewer: checks the PRD makes sense and the skill is implementable.
   - skill-builder: implements the skill (SKILL.md, scripts, unit tests) against the locked `examples.json`; invoked
     repeatedly with fresh context, state lives in `work/<skill>/progress.md`.

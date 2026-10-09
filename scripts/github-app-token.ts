@@ -5,6 +5,7 @@
 import { execFile } from "node:child_process";
 import { createSign } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { devNull } from "node:os";
 
 const GITHUB_API = "https://api.github.com";
 const API_HEADERS = {
@@ -19,6 +20,40 @@ const JWT_LIFETIME_SECONDS = 540;
 const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
 const MAX_EXEC_BUFFER_BYTES = 16 * 1024 * 1024;
 const REDACTED = "[REDACTED]";
+
+// Git config for bot children at command-line scope (`GIT_CONFIG_COUNT`),
+// which overrides the repo's `.git/config`; the operator's global and system
+// config is not read at all. Nothing is signed (the operator's key would sign
+// bot commits) and the only credential is the bot token (`gh` serves
+// `GH_TOKEN`). An SSH origin would authenticate with the operator's key, so
+// GitHub SSH URLs are rewritten to HTTPS and any other transport is refused.
+const BOT_GIT_CONFIG = [
+  ["commit.gpgSign", "false"],
+  ["tag.gpgSign", "false"],
+  ["tag.forceSignAnnotated", "false"],
+  ["push.gpgSign", "false"],
+  ["credential.helper", ""],
+  ["credential.helper", "!gh auth git-credential"],
+  ["url.https://github.com/.insteadOf", "git@github.com:"],
+  ["url.https://github.com/.insteadOf", "ssh://git@github.com/"],
+] as const;
+
+const BOT_GIT_ENV: Readonly<Record<string, string>> = {
+  GIT_ALLOW_PROTOCOL: "https",
+  // No prompt or askpass helper: missing bot credentials fail, never fall
+  // back to the operator's.
+  GIT_ASKPASS: "",
+  GIT_CONFIG_COUNT: String(BOT_GIT_CONFIG.length),
+  GIT_CONFIG_GLOBAL: devNull,
+  GIT_CONFIG_NOSYSTEM: "1",
+  GIT_TERMINAL_PROMPT: "0",
+  ...Object.fromEntries(
+    BOT_GIT_CONFIG.flatMap(([key, value], index) => [
+      [`GIT_CONFIG_KEY_${index}`, key],
+      [`GIT_CONFIG_VALUE_${index}`, value],
+    ])
+  ),
+};
 
 // Every secret this process has seen; scrubbed from any error text.
 const secrets = new Set<string>();
@@ -176,6 +211,7 @@ export const botEnv = async (): Promise<Record<string, string>> => {
     getBotIdentity(),
   ]);
   return {
+    ...BOT_GIT_ENV,
     GH_TOKEN: token,
     GIT_AUTHOR_EMAIL: email,
     GIT_AUTHOR_NAME: name,
@@ -189,7 +225,15 @@ export const runAsBot = async (
   args: readonly string[],
   { stdin }: { stdin?: string } = {}
 ): Promise<string> => {
-  const env = { ...process.env, ...(await botEnv()) };
+  // Inherited `GIT_*` variables (`GIT_CONFIG_PARAMETERS`, `GIT_SSH_COMMAND`,
+  // `GIT_ASKPASS`, …) could bring the operator's setup back.
+  const hostEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_"))
+  );
+  const env = {
+    ...hostEnv,
+    ...(await botEnv()),
+  };
   return await new Promise((resolve, reject) => {
     const child = execFile(
       cmd,

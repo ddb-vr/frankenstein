@@ -123,8 +123,14 @@ Logging:
 stdout = exactly one JSON line, exit code 0 on PASS, 1 on FAIL:
 
 ```json
-{ "status": "PASS", "unit": "pass", "examples": { "passed": 4, "total": 4 }, "log": "logs/x/2026-10-08T21-30-00.log" }
-{ "status": "FAIL", "stage": "examples", "example": "invalid checksum", "reason": "expected {...} got {...}", "log": "logs/x/..." }
+{"status": "PASS", "unit": "pass", "examples": {"passed": 4, "total": 4}, "log": "logs/x/2026-10-08T21-30-00.log"}
+{
+  "status": "FAIL",
+  "stage": "examples",
+  "example": "invalid checksum",
+  "reason": "expected {...} got {...}",
+  "log": "logs/x/..."
+}
 ```
 
 `reason` is truncated to 500 characters.

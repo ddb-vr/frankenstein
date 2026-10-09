@@ -85,7 +85,7 @@ const usageByModel = () =>
 test("skill-builder invocations are capped; other agents are not counted", () => {
   const builder = { prompt: "build", subagent_type: "skill-builder" };
   assert.equal(call("Agent", builder), undefined);
-  assert.equal(call("Agent", { subagent_type: "prd" }), undefined);
+  assert.equal(call("Agent", { subagent_type: "prd-writer" }), undefined);
   assert.equal(call("Task", builder), undefined);
   assert.match(call("Agent", builder) ?? "", BUILDER_CAP);
   // Denied attempts are not counted; the cap stays.

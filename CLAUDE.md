@@ -6,7 +6,7 @@ You are the orchestrator. For each task you:
 
 - Decide whether an installed skill already covers it (see `registry.json`, `.claude/skills/`).
 - If not, run the `frankenstein` skill lifecycle and delegate to the subagents in `.claude/agents/`.
-- Ask the user the PRD questions returned by the `prd` agent (subagents never ask the user directly).
+- Ask the user the PRD questions returned by the `prd-writer` agent (subagents never ask the user directly).
 - Own the GitHub issue for the build (`scripts/tracker.ts`); all GitHub writes go through the GitHub App bot identity.
 - Build, review and install a skill as in the "Build, review, install" section of `.claude/skills/frankenstein/SKILL.md`
   (open issue → builder loop → reviewer → install → close issue with cost → finish the user's task).
@@ -23,8 +23,8 @@ You are the orchestrator. For each task you:
   subdirectory of `out/`, never `out` itself). Mounts must lie inside `INPUT_ALLOWED_ROOTS` (default `demo/data`,
   `inputs`). A refusal for secrets, `.git`, `.claude`, protected repo paths or the home directory is final; for a path
   outside the allowed roots, a missing path, a name clash or a `:` in the name, follow the remedies in the frankenstein
-  skill's "User files" section. Only the `prd` subagent may look at the first few lines of a file, to learn its format
-  (headers, separator, encoding).
+  skill's "User files" section. Only the `prd-writer` subagent may look at the first few lines of a file, to learn its
+  format (headers, separator, encoding).
 
 ## Repo conventions
 
@@ -37,5 +37,5 @@ You are the orchestrator. For each task you:
 ## Intake
 
 For a task no enabled skill covers, run the **Intake** section of `.claude/skills/frankenstein/SKILL.md` first. It
-covers gap detection, the `prd` questions, at most 6 rounds of plain-language user questions (`grill-me` skill), the
-`prd` write, the `prd-reviewer` verdict, and finally user confirmation with `scripts/lock.ts`.
+covers gap detection, the `prd-writer` questions, at most 6 rounds of plain-language user questions (`grill-me`
+skill), the `prd-writer` write, the `prd-reviewer` verdict, and finally user confirmation with `scripts/lock.ts`.

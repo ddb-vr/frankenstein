@@ -271,7 +271,10 @@ test("hook process blocks a malformed stop, ignores other agents and logs each d
   assert.equal(output.decision, "block");
   assert.match(output.reason, NOT_RECORDED);
 
-  const other = await run({ agent_type: "prd", last_assistant_message: "x" });
+  const other = await run({
+    agent_type: "prd-writer",
+    last_assistant_message: "x",
+  });
   assert.equal(other.exitCode, 0);
   assert.equal(other.stdout, "");
 
@@ -292,7 +295,7 @@ test("hook process blocks a malformed stop, ignores other agents and logs each d
     logged.map(([, hook, decision, , subject]) => [hook, decision, subject]),
     [
       ["capture-review", "block", "SubagentStop skill-reviewer"],
-      ["capture-review", "allow", "SubagentStop prd"],
+      ["capture-review", "allow", "SubagentStop prd-writer"],
       ["capture-review", "deny", "SubagentHandback skill-reviewer"],
     ]
   );

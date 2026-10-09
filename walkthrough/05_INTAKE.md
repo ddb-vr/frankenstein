@@ -14,17 +14,17 @@ Flow you are implementing:
 
 1. **Gap detection** (main agent): read `registry.json` / installed skills; decide whether an enabled skill covers the
    task. If yes → use it via `node scripts/run-skill.ts`. If no → continue.
-2. **Intent + questions** (prd subagent, Sonnet, fresh context): estimate what the user wants and why, return 0–6 rounds
-   of questions to the main agent. The subagent never asks the user directly. Questions follow the plain-language
-   `grill-me` skill (`.claude/skills/grill-me/SKILL.md`), adapted
+2. **Intent + questions** (`prd-writer` subagent, Sonnet, fresh context): estimate what the user wants and why, return
+   0–6 rounds of questions to the main agent. The subagent never asks the user directly. Questions follow the
+   plain-language `grill-me` skill (`.claude/skills/grill-me/SKILL.md`), adapted
    from https://github.com/mattpocock/skills/blob/main/skills/productivity/grilling/SKILL.md for a non-technical user:
    everyday words in the user's language, no jargon, 2–4 options with the recommended one first and a one-line "why".
    Like `frankenstein`, `grill-me` is a lifecycle skill: it is not in `registry.json` and gap detection never treats it
    as a user capability.
 3. **Grill me** (main agent, main session): ask the user the questions, prefer offered options over open questions, max
    6 rounds; skip or just confirm when the request is already precise.
-4. **Source of truth** (`prd` subagent): write `work/<skill>/PRD.md` and `work/<skill>/examples.json`. A new skill name
-   must not clash with `work/`, `.claude/skills/` or `registry.json`.
+4. **Source of truth** (`prd-writer` subagent): write `work/<skill>/PRD.md` and `work/<skill>/examples.json`. A new
+   skill name must not clash with `work/`, `.claude/skills/` or `registry.json`.
 5. **PRD review** (`prd-reviewer` subagent, Opus): approve or reject with reasons; on reject the main agent fixes via
    step 4 (asking the user first when a reason needs their decision) and reviews again. Review runs before the lock,
    because a locked `examples.json` can never change (`guard-files.ts` blocks the write, `lock.ts` refuses to re-lock).
@@ -34,10 +34,10 @@ Flow you are implementing:
 
 ## 1. Agent definitions
 
-Fill in `.claude/agents/prd.md` and `.claude/agents/prd-reviewer.md` (keep the frontmatter; models stay sonnet / opus).
-Keep prompts short and concrete – they cost tokens on every call.
+Fill in `.claude/agents/prd-writer.md` and `.claude/agents/prd-reviewer.md` (keep the frontmatter; models stay
+sonnet / opus). Keep prompts short and concrete – they cost tokens on every call.
 
-`prd` must:
+`prd-writer` must:
 
 - Work in two modes stated in its prompt: `questions` (return questions only) and `write` (write PRD.md +
   examples.json).

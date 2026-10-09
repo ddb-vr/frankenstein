@@ -102,7 +102,9 @@ const checkReview = (root: string, skill: string): void => {
   const reviewedHash = isPlainObject(review) ? review.examplesHash : undefined;
   if (reviewedHash !== lockHash) {
     throw new Error(
-      `work/${skill}/review.json was captured for examplesHash ${JSON.stringify(reviewedHash ?? null)}, but the lock has ${JSON.stringify(lockHash ?? null)}: invoke the skill-reviewer again`
+      `work/${skill}/review.json was captured for examplesHash ${JSON.stringify(
+        reviewedHash ?? null
+      )}, but the lock has ${JSON.stringify(lockHash ?? null)}: invoke the skill-reviewer again`
     );
   }
 };

@@ -236,7 +236,9 @@ export const checkMount = (given: string, policy: MountPolicy): string => {
       )
       .join(", ");
     throw deny(
-      `it is outside the allowed roots (${roots}; ${ALLOWED_ROOTS_ENV} in .env)${real === absolute ? "" : ` after resolving symlinks to ${real}`}`
+      `it is outside the allowed roots (${roots}; ${ALLOWED_ROOTS_ENV} in .env)${
+        real === absolute ? "" : ` after resolving symlinks to ${real}`
+      }`
     );
   }
   const nameReason = deniedNameReason(real, allowedRoot, stats.isDirectory());

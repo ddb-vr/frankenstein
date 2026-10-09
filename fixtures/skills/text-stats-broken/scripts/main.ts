@@ -33,7 +33,9 @@ const main = async (): Promise<void> => {
     process.stdout.write(`${JSON.stringify(textStats(JSON.parse(raw)))}\n`);
   } catch (error) {
     process.stdout.write(
-      `${JSON.stringify({ error: (error as Error).message })}\n`
+      `${JSON.stringify({
+        error: (error as Error).message,
+      })}\n`
     );
     process.exitCode = 1;
   }

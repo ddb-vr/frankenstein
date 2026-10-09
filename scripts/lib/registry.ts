@@ -27,13 +27,6 @@ import { computeCost } from "./pricing.ts";
 
 export const REPO_ROOT = path.resolve(import.meta.dirname, "..", "..");
 const VERSION = /^v([1-9]\d*)$/;
-// Push with the bot token: `gh` serves `GH_TOKEN` as git credentials.
-export const BOT_CREDENTIALS = [
-  "-c",
-  "credential.helper=",
-  "-c",
-  "credential.helper=!gh auth git-credential",
-];
 
 const execFileAsync = promisify(execFile);
 
@@ -312,7 +305,9 @@ export const applyChange = async <T>(
       await restoreChange(deps, change);
     } catch (restoreError) {
       throw new Error(
-        `${message(error)}; rollback failed, check ${dirs.join(", ")}, registry.json and git status: ${message(restoreError)}`,
+        `${message(error)}; rollback failed, check ${dirs.join(", ")}, registry.json and git status: ${message(
+          restoreError
+        )}`,
         { cause: restoreError }
       );
     }
@@ -350,7 +345,6 @@ export const pushChange = async (
   await deps.bot("git", [
     "-C",
     deps.root,
-    ...BOT_CREDENTIALS,
     "push",
     "--atomic",
     "origin",

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createVerify, generateKeyPairSync } from "node:crypto";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -8,12 +8,17 @@ import {
   type botEnv,
   createAppJwt,
   type getInstallationToken,
+  type runAsBot,
 } from "./github-app-token.ts";
 
 const RSA_MODULUS_BITS = 2048;
 const FIXED_NOW = 1_700_000_000;
 const BASE64URL_JWT = /^[\w-]+\.[\w-]+\.[\w-]+$/;
 const MINT_FAILED = /access_tokens failed: 500/;
+const SSH_REFUSED = /transport 'ssh' not allowed/;
+const BOT_AUTHOR = /^author frank\[bot\] <42\+frank\[bot\]@/m;
+const BOT_COMMITTER = /^committer frank\[bot\] <42\+frank\[bot\]@/m;
+const BOT_TAGGER = /^tagger frank\[bot\] </m;
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", {
   modulusLength: RSA_MODULUS_BITS,
@@ -63,6 +68,7 @@ test("JWT segments are base64url without padding", () => {
 interface TokenModule {
   botEnv: typeof botEnv;
   getInstallationToken: typeof getInstallationToken;
+  runAsBot: typeof runAsBot;
 }
 
 // Dynamic import is deliberate: a query-suffixed specifier yields a fresh
@@ -76,6 +82,8 @@ const freshModule = async (): Promise<TokenModule> => {
 const TOKEN_LIFETIME_MS = 60 * 60 * 1000;
 const realFetch = globalThis.fetch;
 const savedEnv = {
+  GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL,
+  GIT_CONFIG_PARAMETERS: process.env.GIT_CONFIG_PARAMETERS,
   GITHUB_APP_ID: process.env.GITHUB_APP_ID,
   GITHUB_APP_INSTALLATION_ID: process.env.GITHUB_APP_INSTALLATION_ID,
   GITHUB_APP_PRIVATE_KEY_PATH: process.env.GITHUB_APP_PRIVATE_KEY_PATH,
@@ -172,4 +180,43 @@ test("a failed token mint is not cached; the next call retries", async () => {
   assert.equal(counts.tokens, 1);
   assert.equal(await tokens.getInstallationToken(), "tok-2");
   assert.equal(counts.tokens, 2);
+});
+
+test("bot git ignores the operator's signing, credentials and SSH setup", async (t) => {
+  stubGitHub();
+  const tokens = await freshModule();
+  const dir = mkdtempSync(join(tmpdir(), "bot-git-"));
+  t.after(() => rmSync(dir, { force: true, recursive: true }));
+  const signing =
+    "[commit]\n\tgpgSign = true\n[tag]\n\tgpgSign = true\n[gpg]\n\tprogram = false\n";
+  // Operator config at every level asks to sign with a key the bot must not use.
+  const globalConfig = join(dir, "operator.gitconfig");
+  writeFileSync(globalConfig, signing);
+  process.env.GIT_CONFIG_GLOBAL = globalConfig;
+  process.env.GIT_CONFIG_PARAMETERS = "'commit.gpgsign'='true'";
+  const repo = join(dir, "repo");
+  mkdirSync(repo);
+  const git = (...args: string[]): Promise<string> =>
+    tokens.runAsBot("git", ["-C", repo, ...args]);
+  await git("init", "--quiet");
+  writeFileSync(join(repo, ".git", "config"), signing, { flag: "a" });
+  await git("remote", "add", "origin", "git@github.com:acme/skills.git");
+  await git("remote", "add", "elsewhere", "ssh://example.invalid/skills.git");
+  writeFileSync(join(repo, "file.txt"), "x\n");
+  await git("add", "file.txt");
+  await git("commit", "--quiet", "-m", "bot commit");
+  await git("tag", "-a", "skill/x@v1", "-m", "bot tag");
+
+  const commit = await git("cat-file", "commit", "HEAD");
+  assert.ok(!commit.includes("gpgsig"), commit);
+  assert.match(commit, BOT_AUTHOR);
+  assert.match(commit, BOT_COMMITTER);
+  const tag = await git("cat-file", "tag", "skill/x@v1");
+  assert.ok(!tag.includes("SIGNATURE"), tag);
+  assert.match(tag, BOT_TAGGER);
+  assert.equal(
+    (await git("ls-remote", "--get-url", "origin")).trim(),
+    "https://github.com/acme/skills.git"
+  );
+  await assert.rejects(git("push", "elsewhere", "HEAD"), SSH_REFUSED);
 });

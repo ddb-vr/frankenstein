@@ -269,7 +269,9 @@ const mountLines = (args: readonly string[]): string[] =>
  */
 export const formatRunRecord = (record: RunRecord): string =>
   [
-    `sandbox: container=${record.containerName} exit=${record.exitCode ?? "none"} durationMs=${record.durationMs}${record.timedOut ? " TIMED OUT" : ""}`,
+    `sandbox: container=${record.containerName} exit=${
+      record.exitCode ?? "none"
+    } durationMs=${record.durationMs}${record.timedOut ? " TIMED OUT" : ""}`,
     `docker argv: ${JSON.stringify(["docker", ...redactDockerArgs(record.args)])}`,
     ...mountLines(record.args.slice(0, record.args.indexOf(SANDBOX_IMAGE))),
   ].join("\n");

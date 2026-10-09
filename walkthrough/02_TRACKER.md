@@ -38,9 +38,13 @@ Export (no CLI that prints the token):
   `{ name: "<slug>[bot]", email: "<id>+<slug>[bot]@users.noreply.github.com" }`. Cached for the process lifetime, also
   single-flight.
 - `botEnv()` – returns env vars for child processes: `GH_TOKEN`, `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`,
-  `GIT_COMMITTER_NAME`, `GIT_COMMITTER_EMAIL`.
-- `runAsBot(cmd, args, { stdin? })` – `execFile` with `{ ...process.env, ...botEnv() }`, returns stdout, throws with
-  redacted stderr.
+  `GIT_COMMITTER_NAME`, `GIT_COMMITTER_EMAIL`, plus git isolation so the operator's git setup is never used:
+  `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_ALLOW_PROTOCOL=https`, `GIT_ASKPASS=`,
+  `GIT_TERMINAL_PROMPT=0` and `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n` setting `commit.gpgSign`, `tag.gpgSign`,
+  `tag.forceSignAnnotated`, `push.gpgSign` to `false`, `credential.helper` to only `!gh auth git-credential`, and
+  `url.https://github.com/.insteadOf` for `git@github.com:` and `ssh://git@github.com/`.
+- `runAsBot(cmd, args, { stdin? })` – `execFile` with `{ ...process.env without GIT_*, ...botEnv() }`, returns stdout,
+  throws with redacted stderr.
 
 ## 2. `scripts/lib/pricing.ts`
 
@@ -82,7 +86,9 @@ node scripts/tracker.ts done    --issue <n> --summary <text> [--usage <path/to/u
 
 - `scripts/github-app-token.test.ts` – generate an RSA key pair with `crypto.generateKeyPairSync`, build a JWT with a
   fixed `now`, verify the signature and claims with the public key. With a stubbed `fetch`, concurrent cold `botEnv()`
-  calls mint one token and look up the identity once; a failed mint is retried.
+  calls mint one token and look up the identity once; a failed mint is retried. `runAsBot("git", …)` in a temp repo
+  whose global, local and `GIT_CONFIG_PARAMETERS` config demand signing makes unsigned, bot-authored commits and tags,
+  resolves a `git@github.com:` origin to HTTPS and refuses an SSH push.
 - `scripts/lib/pricing.test.ts` – cost calculation on a known usage sample.
 - `scripts/tracker.test.ts` – formatting functions, `--dry-run` output of each command, `.env`/placeholder repo
   resolution, and session usage via `work/.run/current.json` (dry-run leaves the budget state untouched).

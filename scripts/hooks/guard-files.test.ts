@@ -108,7 +108,7 @@ test("lock files, installed skills, settings, scripts and registry are protected
   for (const file of [
     "/repo/work/csv-sum/scripts/main.ts",
     "/repo/work/csv-sum/progress.md",
-    "/repo/.claude/agents/prd.md",
+    "/repo/.claude/agents/prd-writer.md",
     "/repo/README.md",
     "/tmp/scripts/x.ts",
   ]) {

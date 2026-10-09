@@ -96,7 +96,9 @@ export const failedTestNames = (output: string): string[] => {
 
 /** `lint` stage reason: the fixer to run first, then every problem. */
 export const lintReason = (skillName: string, problems: string[]): string =>
-  `${problems.length} lint problem(s); run \`node scripts/fix-skill.ts ${skillName}\` for safe fixes, fix the rest by hand: ${problems.join("; ")}`;
+  `${problems.length} lint problem(s); run \`node scripts/fix-skill.ts ${skillName}\` for safe fixes, fix the rest by hand: ${problems.join(
+    "; "
+  )}`;
 
 interface Logger {
   /** Full log only. */
@@ -293,7 +295,9 @@ const run = async (skillDir: string, log: Logger): Promise<Summary> => {
       ].join("\n")
     );
     log.result(
-      `${match.pass ? "PASS" : "FAIL"} example "${example.name}" (${result.durationMs}ms)${match.pass ? "" : `: ${match.reason}`}`
+      `${match.pass ? "PASS" : "FAIL"} example "${example.name}" (${result.durationMs}ms)${
+        match.pass ? "" : `: ${match.reason}`
+      }`
     );
     if (match.pass) {
       passed += 1;

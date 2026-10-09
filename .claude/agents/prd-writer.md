@@ -1,5 +1,5 @@
 ---
-name: prd
+name: prd-writer
 description: >
   Drafts the PRD for a missing skill: estimates user intent, drafts clarifying questions, writes the source of truth summary and examples.json.
 model: sonnet
@@ -51,14 +51,16 @@ Input: the request and all answers, plus any corrections or reviewer reasons.
    directory in `work/` or `.claude/skills/` or by an entry in `registry.json`. When the prompt gives the skill name (a
    rewrite), reuse it.
 2. Write `work/<skill>/PRD.md` with these sections:
-  - `## Goal`: one sentence starting "The user expects that at the end …"
-  - `## Inputs`: the stdin JSON shape; for files, the path fields plus the file format (columns, separator, encoding)
-  - `## Outputs`: the stdout JSON shape (a compact summary) and any files written to `/output`
-  - `## Edge cases`
-  - `## Errors`: when the skill exits 1 with `{ "error" }`
-  - `## Network`: "Not needed", or "Needed" with the exact domains and endpoints
-  - `## Out of scope`
-  - `## Open points`: anything the user did not confirm
+
+- `## Goal`: one sentence starting "The user expects that at the end …"
+- `## Inputs`: the stdin JSON shape; for files, the path fields plus the file format (columns, separator, encoding)
+- `## Outputs`: the stdout JSON shape (a compact summary) and any files written to `/output`
+- `## Edge cases`
+- `## Errors`: when the skill exits 1 with `{ "error" }`
+- `## Network`: "Not needed", or "Needed" with the exact domains and endpoints
+- `## Out of scope`
+- `## Open points`: anything the user did not confirm
+
 3. Write `work/<skill>/examples.json` in the format checked by `scripts/lib/examples.ts`:
 
 ```json

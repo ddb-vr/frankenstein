@@ -2,7 +2,9 @@
 
 ## Goal
 
-The user expects that at the end they see which customers made no completed purchase in the last N days before a given date (here 60 days before 9. 10. 2026), with each customer's total spend, as a short summary plus an Excel-friendly CSV of all of them.
+The user expects that at the end they see which customers made no completed purchase in the last N days before a given
+date (here 60 days before 9. 10. 2026), with each customer's total spend, as a short summary plus an Excel-friendly CSV
+of all of them.
 
 ## Inputs
 
@@ -24,6 +26,7 @@ case-insensitively (identifies the customer) and is output lower-cased. Name is 
 customer.
 
 Rules:
+
 - Only `completed` orders count, both for last purchase and total spend. Cancelled orders are ignored entirely.
 - Window start = `reference_date` minus `days` days (10. 8. 2026 for 60 days). A customer is lapsed when their last
   completed purchase is before the window start (no completed order from 10. 8. to 9. 10. 2026 inclusive).
@@ -59,7 +62,8 @@ sorted by total spend descending (ties by e-mail ascending).
 - Boundary: last purchase on 9. 8. 2026 is lapsed; on 10. 8. 2026 is not (60 days).
 - Same e-mail in different letter case is one customer; output e-mail is lower-cased.
 - A cancelled order inside the window does not make the customer active.
-- Rows with unreadable amount, date (incl. impossible dates) or missing e-mail are skipped and counted in `orders_skipped`.
+- Rows with unreadable amount, date (incl. impossible dates) or missing e-mail are skipped and counted in
+  `orders_skipped`.
 - No lapsed customers: `lapsed_customers` 0, `total_spend_czk` 0, empty list, no file written.
 - More than 5 lapsed customers: stdout lists only top 5, the file lists all.
 

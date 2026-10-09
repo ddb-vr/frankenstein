@@ -1,8 +1,8 @@
 # Task: Build loop, skill review, end-to-end orchestration
 
 Work on branch `feat/build`. Builds on merged `feat/sandbox`, `feat/tracker`, `feat/hooks`; the teammate is finishing
-`feat/intake` in parallel (intake section of the meta-skill, `prd` agents). Follow `CLAUDE.md` conventions. No new
-dependencies.
+`feat/intake` in parallel (intake section of the meta-skill, `prd-writer` and `prd-reviewer` agents). Follow
+`CLAUDE.md` conventions. No new dependencies.
 
 Goal: the first full end-to-end run – from a vague user request to an installed, bot-committed skill and a closed issue
 with cost – using the internal IČO validation (never demoed, reset afterwards).
