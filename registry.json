@@ -1,31 +1,3 @@
 {
-  "skills": [
-    {
-      "enabled": false,
-      "examplesHash": "c946f20cb5ba36ccb83a520eca9eafca66afa630c8b67b2795b64c563e642e28",
-      "installedAt": "2026-10-09T04:22:36.498Z",
-      "issue": 16,
-      "name": "payment-reminders",
-      "network": false,
-      "version": "v1",
-      "history": [
-        {
-          "action": "install",
-          "at": "2026-10-09T04:22:36.498Z",
-          "commit": "c72789ca8ac3a7d7a543a0d9401608703a09f6aa",
-          "costUsd": 1.551889,
-          "issue": 16,
-          "version": "v1"
-        },
-        {
-          "action": "disable",
-          "at": "2026-10-09T04:24:12.649Z",
-          "commit": "1e8696e24fbad1324798d2a8b2f1cef7f006a918",
-          "costUsd": 0,
-          "issue": 16,
-          "version": "v1"
-        }
-      ]
-    }
-  ]
+  "skills": []
 }
