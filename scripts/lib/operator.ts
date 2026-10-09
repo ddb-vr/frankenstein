@@ -506,7 +506,9 @@ export const removeSkill = (
         await deps.bot("git", ["-C", deps.root, "tag", "-d", ...localTags]);
       } catch (error) {
         throw new Error(
-          `removed${deps.remote ? " and pushed" : ""} as ${commit}, but deleting the local tags failed: ${message(error)}`,
+          `removed${
+            deps.remote ? " and pushed" : ""
+          } as ${commit}, but deleting the local tags failed: ${message(error)}`,
           { cause: error }
         );
       }
