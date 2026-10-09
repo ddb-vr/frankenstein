@@ -10,6 +10,7 @@ import { hookInput, recordedInput, runHookProcess } from "./testing.ts";
 const ROOT = "/repo";
 const WINDOWS_ROOT = "C:\\Users\\dev\\frankenstein";
 const LOCKED = /examples\.json is locked/;
+const INPUTS_LOCKED = /fixtures\/input\/ is locked with the examples/;
 const REVIEW_BY_HOOK = /written only by the capture-review hook/;
 const SKILLS_PROTECTED = /\.claude\/skills is protected/;
 const DISABLED_PROTECTED =
@@ -49,6 +50,26 @@ test("examples.json is writable until the skill is locked", () => {
   // Another skill's lock does not lock this one.
   assert.equal(
     checkFileWrite(input, context(["work/.locks/other.json"])),
+    undefined
+  );
+});
+
+test("fixture input files are writable until the skill is locked", () => {
+  const locked = context(["work/.locks/csv-sum.json"]);
+  for (const target of [
+    "/repo/work/csv-sum/fixtures/input/x.csv",
+    "work/csv-sum/fixtures/input/nested/y.csv",
+  ]) {
+    assert.equal(checkFileWrite(write(target), context()), undefined);
+    assert.match(checkFileWrite(write(target), locked) ?? "", INPUTS_LOCKED);
+  }
+  // Other fixtures and other skills' inputs stay writable.
+  assert.equal(
+    checkFileWrite(write("/repo/work/csv-sum/fixtures/inputs.csv"), locked),
+    undefined
+  );
+  assert.equal(
+    checkFileWrite(write("/repo/work/other/fixtures/input/x.csv"), locked),
     undefined
   );
 });

@@ -1,7 +1,9 @@
 // Locks a skill's acceptance examples once the user confirms the source of
-// truth: `work/.locks/<skill>.json` pins the sha256 of `work/<skill>/examples.json`.
-// While the lock exists, `scripts/hooks/guard-files.ts` blocks edits to the
-// examples and `scripts/registry.ts install` refuses a mismatching hash.
+// truth: `work/.locks/<skill>.json` pins one sha256 (`hashExamples`) over
+// `work/<skill>/examples.json` and every file under `work/<skill>/fixtures/input/`
+// (the examples' input files). While the lock exists,
+// `scripts/hooks/guard-files.ts` blocks edits to both and
+// `scripts/registry.ts install` refuses a mismatching hash.
 //
 //   node scripts/lock.ts <skill>
 //
@@ -12,7 +14,14 @@
 // exit 1.
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { isPlainObject, SKILL_NAME, validateExamples } from "./lib/examples.ts";
 import { formatLockedExamples } from "./lib/skill-lint.ts";
@@ -32,8 +41,46 @@ export const lockFilePath = (root: string, skill: string): string =>
 export const examplesPath = (root: string, skill: string): string =>
   path.join(root, "work", skill, "examples.json");
 
-export const sha256File = (filePath: string): string =>
-  createHash("sha256").update(readFileSync(filePath)).digest("hex");
+const FIXTURE_INPUTS = path.join("fixtures", "input");
+
+/**
+ * One sha256 over a skill directory's `examples.json` and every file under
+ * `fixtures/input/` (symlinks by their target), in sorted posix-path order.
+ * Each entry feeds `path NUL length NUL bytes`, so no two trees collide.
+ */
+export const hashExamples = (skillDir: string): string => {
+  const entries: [string, Buffer][] = [
+    ["examples.json", readFileSync(path.join(skillDir, "examples.json"))],
+  ];
+  const inputs = path.join(skillDir, FIXTURE_INPUTS);
+  if (existsSync(inputs)) {
+    for (const entry of readdirSync(inputs, {
+      recursive: true,
+      withFileTypes: true,
+    })) {
+      const absolute = path.join(entry.parentPath, entry.name);
+      const relative = path
+        .relative(skillDir, absolute)
+        .split(path.sep)
+        .join("/");
+      if (entry.isFile()) {
+        entries.push([relative, readFileSync(absolute)]);
+      } else if (entry.isSymbolicLink()) {
+        entries.push([
+          `${relative} -> symlink`,
+          Buffer.from(readlinkSync(absolute)),
+        ]);
+      }
+    }
+  }
+  entries.sort(([a], [b]) => (a < b ? -1 : Number(a > b)));
+  const hash = createHash("sha256");
+  for (const [relative, bytes] of entries) {
+    hash.update(`${relative}\0${bytes.length}\0`);
+    hash.update(bytes);
+  }
+  return hash.digest("hex");
+};
 
 const assertSkillName = (skill: string): void => {
   if (!SKILL_NAME.test(skill)) {
@@ -93,7 +140,7 @@ export const lockSkill = (
   }
   const lock: SkillLock = {
     lockedAt: now.toISOString(),
-    sha256: sha256File(file),
+    sha256: hashExamples(path.dirname(file)),
     skill,
   };
   mkdirSync(path.dirname(lockFilePath(root, skill)), { recursive: true });

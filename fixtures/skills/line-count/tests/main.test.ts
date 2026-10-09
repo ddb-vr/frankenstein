@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { decode, parseInput, splitLines } from "../scripts/main.ts";
+import { countLines, decode, parseInput, splitLines } from "../scripts/main.ts";
 
 const CP1250_FILE = path.join(
   import.meta.dirname,
@@ -42,4 +43,42 @@ test("input needs a file path; encoding defaults to utf-8", () => {
   assert.throws(() => parseInput({ encoding: 1, file: "/input/a.csv" }), {
     message: "encoding must be a string",
   });
+});
+
+test("countLines writes numbered decoded lines to the output directory", (t) => {
+  const outputDir = mkdtempSync(path.join(tmpdir(), "line-count-"));
+  t.after(() => rmSync(outputDir, { force: true, recursive: true }));
+  const summary = countLines(
+    { encoding: "windows-1250", file: CP1250_FILE },
+    outputDir
+  );
+  assert.deepEqual(summary, {
+    file: "vypis-cp1250.csv",
+    firstLine: "Datum;Objem;Měna;Zpráva pro příjemce",
+    lines: 3,
+    output: "vypis-cp1250.csv.lines.txt",
+  });
+  assert.deepEqual(readdirSync(outputDir), ["vypis-cp1250.csv.lines.txt"]);
+  assert.equal(
+    readFileSync(path.join(outputDir, "vypis-cp1250.csv.lines.txt"), "utf8"),
+    "1\tDatum;Objem;Měna;Zpráva pro příjemce\n" +
+      "2\t01.10.2026;1500,00;CZK;Faktura 2026-014 – Žluťoučký kůň s.r.o.\n" +
+      "3\t03.10.2026;-250,00;CZK;Poplatek\n"
+  );
+});
+
+test("countLines without an output directory writes nothing", () => {
+  const inputDir = path.dirname(CP1250_FILE);
+  const before = readdirSync(inputDir);
+  const summary = countLines(
+    { encoding: "windows-1250", file: CP1250_FILE },
+    null
+  );
+  assert.deepEqual(summary, {
+    file: "vypis-cp1250.csv",
+    firstLine: "Datum;Objem;Měna;Zpráva pro příjemce",
+    lines: 3,
+    output: null,
+  });
+  assert.deepEqual(readdirSync(inputDir), before);
 });

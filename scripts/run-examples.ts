@@ -14,6 +14,7 @@
 
 import {
   appendFileSync,
+  chmodSync,
   globSync,
   mkdirSync,
   mkdtempSync,
@@ -184,6 +185,9 @@ export const withOutputDir = async <T>(
   use: (outputDir: string) => Promise<T>
 ): Promise<T> => {
   const outputDir = mkdtempSync(path.join(tmpdir(), "frk-output-"));
+  // mkdtemp creates 0700 owned by the host user; the container runs as uid
+  // 1000, which on Linux hosts with another uid could not write otherwise.
+  chmodSync(outputDir, 0o777);
   try {
     return await use(outputDir);
   } finally {

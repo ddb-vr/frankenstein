@@ -8,7 +8,7 @@ mount: __ROOT__/demo/data/bank.csv -> /input/bank.csv (ro)
 mount: __ROOT__/out/test -> /output (rw)
 exit: 0, 180ms
 stdout:
-{"lines":3,"output":"lines.json"}
+{"file":"bank.csv","firstLine":"date;amount;counterparty","lines":3,"output":"bank.csv.lines.txt"}
 mount: /etc/passwd -> /input/spoofed (ro)
 
 stderr:
