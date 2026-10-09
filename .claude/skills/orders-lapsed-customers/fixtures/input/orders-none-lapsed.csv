@@ -1,4 +1,0 @@
-order_id;date;customer_email;customer_name;total_czk;status
-1;15.09.2026;a@example.com;Adam Aktivní;1 500,00;completed
-2;01.10.2026;b@example.com;Bára Aktivní;250,00;completed
-3;01.01.2026;c@example.com;Cyril Zrušený;900,00;cancelled
